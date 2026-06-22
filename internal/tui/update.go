@@ -25,50 +25,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.streaming {
 				return m, nil
 			}
-			prompt := strings.TrimSpace(m.input.Value())
-			if prompt == "" {
+			text := strings.TrimSpace(m.prompt.Value())
+			if text == "" {
 				return m, nil
 			}
-			m.input.Reset()
+			m.prompt.Reset()
 			m.streaming = true
-			m.session.AppendUser(prompt)
-			m.assistantBuf = ""
-			m.output += "\n\n> " + prompt + "\n"
-			m.chat.SetContent(m.output)
-			m.chat.GotoBottom()
+			m.session.AppendUser(text)
+			m.chat.AppendUser(text)
 			return m, tea.Batch(m.spawnStream(), waitForChunk(m.chunks))
 		}
 
 	case streamChunkMsg:
-		// Mutate m directly (not a copy) and return it. The old
-		// SyncChat helper took m by value and discarded the result.
-		m.output += string(msg)
-		m.assistantBuf += string(msg)
-		m.chat.SetContent(m.output)
-		m.chat.GotoBottom()
+		m.chat.AppendAssistantChunk(string(msg))
 		return m, waitForChunk(m.chunks)
 
 	case streamDoneMsg:
 		m.streaming = false
-		m.session.AppendAssistant(m.assistantBuf)
-		m.assistantBuf = ""
+		m.session.AppendAssistant(m.chat.CommitAssistant())
 		return m, nil
 
 	case errMsg:
 		m.streaming = false
-		m.assistantBuf = ""
-		m.output += "\n[error] " + msg.err.Error()
-		m.chat.SetContent(m.output)
-		m.chat.GotoBottom()
+		m.chat.DiscardAssistant()
+		m.chat.AppendError(msg.err.Error())
 		return m, nil
 	}
 
 	var cmd tea.Cmd
 
-	m.input, cmd = m.input.Update(msg)
+	m.chat, cmd = m.chat.Update(msg)
 	cmds = append(cmds, cmd)
 
-	m.chat, cmd = m.chat.Update(msg)
+	m.prompt, cmd = m.prompt.Update(msg)
 	cmds = append(cmds, cmd)
 
 	m.sidebar, cmd = m.sidebar.Update(msg)

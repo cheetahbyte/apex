@@ -3,12 +3,13 @@ package tui
 import (
 	"context"
 
-	"charm.land/bubbles/v2/textinput"
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"github.com/cheetahbyte/apex/internal/conversation"
 	"github.com/cheetahbyte/apex/internal/llm"
+	"github.com/cheetahbyte/apex/internal/tui/components/chat"
+	"github.com/cheetahbyte/apex/internal/tui/components/prompt"
 	"github.com/cheetahbyte/apex/internal/tui/components/sidebar"
+	"github.com/cheetahbyte/apex/internal/tui/components/statusline"
 )
 
 type (
@@ -17,54 +18,41 @@ type (
 	errMsg         struct{ err error }
 )
 
-// Model is the root Bubble Tea model. It owns only UI state and delegates
-// LLM communication to the llm.Client interface and chat history to the
-// conversation.Session.
+// Model is the root Bubble Tea model. It owns only layout state and
+// delegates rendering and event handling to child components. LLM
+// communication goes through the llm.Client interface and chat history
+// lives in conversation.Session.
 type Model struct {
 	width  int
 	height int
 
-	chat    viewport.Model
-	input   textinput.Model
+	chat    chat.Model
+	prompt  prompt.Model
 	sidebar sidebar.Model
+	status  statusline.Model
 
-	session       *conversation.Session
-	output        string // rendered chat text for the viewport
-	assistantBuf  string // accumulates the current assistant response
-	streaming     bool
-	chunks        chan tea.Msg
-	client        llm.Client
+	session   *conversation.Session
+	streaming bool
+	chunks    chan tea.Msg
+	client    llm.Client
 }
 
 // New creates the root TUI model. The LLM client is injected so the TUI
 // stays decoupled from any specific provider.
 func New(client llm.Client) Model {
-	input := textinput.New()
-	input.Placeholder = "Lets work!"
-	input.Focus()
-	input.CharLimit = 4000
-	input.Prompt = "> "
-
-	output := "Apex ready."
-	chat := viewport.New()
-	chat.SetContent(output)
-
-	sidebar := sidebar.New()
-	session := conversation.NewSession()
-
 	return Model{
-		chat:     chat,
-		input:    input,
-		sidebar:  sidebar,
-		session:  session,
+		chat:     chat.New(),
+		prompt:   prompt.New(),
+		sidebar:  sidebar.New(),
+		status:   statusline.New(),
+		session:  conversation.NewSession(),
 		client:   client,
-		output:   output,
 		chunks:   make(chan tea.Msg),
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(textinput.Blink)
+	return tea.Batch(prompt.Blink())
 }
 
 // spawnStream starts an LLM stream for the current session and forwards

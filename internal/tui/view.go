@@ -11,25 +11,18 @@ func (m Model) View() tea.View {
 		v.AltScreen = true
 		return v
 	}
-	contentOuterWidth := safeSub(m.width, sidebarOuterWidth)
-	chatOuterHeight := safeSub(m.height, inputOuterHeight+statusHeight)
 
-	chat := chatStyle()
-	input := inputStyle()
-	chatBorderW, chatBorderH := borderSize(chat)
-	inputBorderW, inputBorderH := borderSize(input)
-
-	chatBox := chat.
-		Width(safeSub(contentOuterWidth, chatBorderW)).
-		Height(safeSub(chatOuterHeight, chatBorderH)).
-		Render(m.chat.View())
-	inputBox := input.
-		Width(safeSub(contentOuterWidth, inputBorderW)).
-		Height(safeSub(inputOuterHeight, inputBorderH)).
-		Render(m.input.View())
-	statusLine := m.renderStatusLine(contentOuterWidth)
-
-	content := lipgloss.JoinVertical(lipgloss.Left, chatBox, inputBox, statusLine)
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		m.chat.View(),
+		m.prompt.View(),
+		m.status.View(
+			m.session.Len(),
+			len(m.prompt.Value()),
+			m.prompt.CharLimit(),
+			m.width,
+			m.height,
+		),
+	)
 	rendered := lipgloss.JoinHorizontal(lipgloss.Top, content, m.sidebar.View())
 
 	v := tea.NewView(rendered)
