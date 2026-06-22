@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -197,5 +198,76 @@ func TestAgent_streamError(t *testing.T) {
 	// Session should not be poisoned
 	if session.Len() != 1 {
 		t.Fatalf("expected 1 message (user only), got %d", session.Len())
+	}
+}
+
+func TestValidateRequiredToolArgsMissingPath(t *testing.T) {
+	spec := tools.ToolSpec{
+		Name: "read_file",
+		Parameters: map[string]any{
+			"required": []string{"path"},
+		},
+	}
+
+	err := validateRequiredToolArgs(spec, json.RawMessage(`{}`))
+	if err == nil {
+		t.Fatal("expected missing required argument error")
+	}
+	if !strings.Contains(err.Error(), `missing required argument "path"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(err.Error(), `{"path":"README.md"}`) {
+		t.Fatalf("expected README.md example, got %v", err)
+	}
+}
+
+func TestValidateRequiredToolArgsAcceptsPresentPath(t *testing.T) {
+	spec := tools.ToolSpec{
+		Name: "read_file",
+		Parameters: map[string]any{
+			"required": []string{"path"},
+		},
+	}
+
+	if err := validateRequiredToolArgs(spec, json.RawMessage(`{"path":"README.md"}`)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWithAgentSystemPromptPrependsWhenMissing(t *testing.T) {
+	msgs := []conversation.Message{
+		{Role: conversation.RoleUser, Content: "hello"},
+	}
+
+	withPrompt := withAgentSystemPrompt(msgs)
+	if len(withPrompt) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(withPrompt))
+	}
+	if withPrompt[0].Role != conversation.RoleSystem {
+		t.Fatalf("expected first message to be system, got %s", withPrompt[0].Role)
+	}
+	if !strings.Contains(withPrompt[0].Content, "Apex, a terminal coding agent") {
+		t.Fatalf("missing default system prompt, got %q", withPrompt[0].Content)
+	}
+}
+
+func TestWithAgentSystemPromptAppendsWhenSystemExists(t *testing.T) {
+	msgs := []conversation.Message{
+		{Role: conversation.RoleSystem, Content: "You are helpful."},
+		{Role: conversation.RoleUser, Content: "hello"},
+	}
+
+	withPrompt := withAgentSystemPrompt(msgs)
+	if len(withPrompt) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(withPrompt))
+	}
+	if withPrompt[0].Role != conversation.RoleSystem {
+		t.Fatalf("expected system to remain first, got %s", withPrompt[0].Role)
+	}
+	if !strings.Contains(withPrompt[0].Content, "You are helpful.") {
+		t.Fatalf("expected existing system prompt preserved, got %q", withPrompt[0].Content)
+	}
+	if !strings.Contains(withPrompt[0].Content, "Apex, a terminal coding agent") {
+		t.Fatalf("expected default system instructions appended, got %q", withPrompt[0].Content)
 	}
 }

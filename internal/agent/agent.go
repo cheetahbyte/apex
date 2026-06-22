@@ -16,6 +16,14 @@ const (
 	maxToolIterations = 5
 	toolTimeout       = 30 * time.Second
 	maxToolResultSize = 64 * 1024
+	agentSystemPrompt = `You are Apex, a terminal coding agent.
+
+Use tool results as authoritative data. If a tool call succeeds, answer from the returned content directly.
+Do not describe tool mechanics (no function calls, IDs, names, schemas, object wrappers).
+If the user asked for a file/web result, return the requested content unless they asked for a summary.
+If user asks for direct output, output the content first.
+
+If a tool call fails, report the exact failure text and what to try next.`
 )
 
 // Event is a single event from the agent loop. The TUI consumes these
@@ -48,7 +56,7 @@ func (a *Agent) Run(ctx context.Context, session *conversation.Session) <-chan E
 
 		for i := 0; i < maxToolIterations; i++ {
 			req := llm.Request{
-				Messages: session.Messages(),
+				Messages: withAgentSystemPrompt(session.Messages()),
 				Tools:    a.registry.Specs(),
 			}
 
@@ -93,6 +101,25 @@ func (a *Agent) Run(ctx context.Context, session *conversation.Session) <-chan E
 	return ch
 }
 
+func withAgentSystemPrompt(messages []conversation.Message) []conversation.Message {
+	for i := range messages {
+		if messages[i].Role == conversation.RoleSystem {
+			if strings.Contains(messages[i].Content, "You are Apex, a terminal coding agent") {
+				return messages
+			}
+			out := make([]conversation.Message, len(messages))
+			copy(out, messages)
+			out[i].Content = out[i].Content + "\n\n" + agentSystemPrompt
+			return out
+		}
+	}
+
+	out := make([]conversation.Message, 0, len(messages)+1)
+	out = append(out, conversation.Message{Role: conversation.RoleSystem, Content: agentSystemPrompt})
+	out = append(out, messages...)
+	return out
+}
+
 // streamTurn consumes the LLM stream, forwarding deltas to the agent
 // channel, and returns the final turn.
 func (a *Agent) streamTurn(ctx context.Context, ch chan<- Event, req llm.Request) (llm.Turn, error) {
@@ -118,6 +145,8 @@ func formatToolStatus(call conversation.ToolCall) string {
 		if err := json.Unmarshal([]byte(call.Arguments), &parsed); err == nil {
 			if url, ok := parsed["url"].(string); ok {
 				argsSummary = url
+			} else if path, ok := parsed["path"].(string); ok {
+				argsSummary = path
 			}
 		}
 	}
@@ -143,6 +172,9 @@ func (a *Agent) executeTool(ctx context.Context, call conversation.ToolCall) str
 			return "tool error: invalid arguments"
 		}
 	}
+	if err := validateRequiredToolArgs(tool.Spec(), args); err != nil {
+		return fmt.Sprintf("tool error: %s", err)
+	}
 
 	toolCtx, cancel := context.WithTimeout(ctx, toolTimeout)
 	defer cancel()
@@ -155,4 +187,65 @@ func (a *Agent) executeTool(ctx context.Context, call conversation.ToolCall) str
 		result.Content = result.Content[:maxToolResultSize] + "\n\n[truncated]"
 	}
 	return result.Content
+}
+
+func validateRequiredToolArgs(spec tools.ToolSpec, args json.RawMessage) error {
+	required := requiredFields(spec.Parameters)
+	if len(required) == 0 {
+		return nil
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(args, &parsed); err != nil {
+		return fmt.Errorf("invalid arguments: %w", err)
+	}
+	for _, field := range required {
+		value, ok := parsed[field]
+		if !ok || isEmptyToolArg(value) {
+			return fmt.Errorf("missing required argument %q for %s. Include it in arguments, for example: %s", field, spec.Name, exampleArgs(spec.Name, field))
+		}
+	}
+	return nil
+}
+
+func requiredFields(schema map[string]any) []string {
+	raw, ok := schema["required"]
+	if !ok {
+		return nil
+	}
+	switch required := raw.(type) {
+	case []string:
+		return required
+	case []any:
+		fields := make([]string, 0, len(required))
+		for _, value := range required {
+			if field, ok := value.(string); ok {
+				fields = append(fields, field)
+			}
+		}
+		return fields
+	default:
+		return nil
+	}
+}
+
+func isEmptyToolArg(value any) bool {
+	if value == nil {
+		return true
+	}
+	if s, ok := value.(string); ok {
+		return strings.TrimSpace(s) == ""
+	}
+	return false
+}
+
+func exampleArgs(toolName, field string) string {
+	switch toolName {
+	case "read_file":
+		return `{"path":"README.md"}`
+	case "web_fetch":
+		return `{"url":"https://example.com"}`
+	default:
+		return fmt.Sprintf(`{"%s":"..."}`, field)
+	}
 }

@@ -210,7 +210,12 @@ func buildToolPrompt(specs []map[string]any) string {
 	var b strings.Builder
 	b.WriteString("You have access to tools. To call a tool, respond with ONLY a JSON object in this exact format, no other text:\n")
 	b.WriteString(`{"tool_calls":[{"id":"call_1","name":"<tool_name>","arguments":{<args>}}]}`)
-	b.WriteString("\n\nIf you don't need a tool, respond normally with text.\n\nAvailable tools:\n")
+	b.WriteString("\n\nIf you don't need a tool, respond normally with text. Never call a tool with empty arguments if its schema has required fields. Infer obvious arguments from the user request. Examples:\n")
+	b.WriteString(`- User: "Take a look at README.md" -> {"tool_calls":[{"id":"call_1","name":"read_file","arguments":{"path":"README.md"}}]}`)
+	b.WriteString("\n")
+	b.WriteString(`- User: "Open flxw.dev" -> {"tool_calls":[{"id":"call_1","name":"web_fetch","arguments":{"url":"https://flxw.dev"}}]}`)
+	b.WriteString("\n\nAfter tool output returns, answer using that content directly. Do not mention tool names, IDs, JSON, XML-like wrappers, or filesystem/function internals. If user asks for a file or URL content, return requested content unless they asked for a summary.\n\n")
+	b.WriteString("Available tools:\n")
 	for _, spec := range specs {
 		name, _ := spec["name"].(string)
 		desc, _ := spec["description"].(string)

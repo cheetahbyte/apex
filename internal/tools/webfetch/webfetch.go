@@ -30,14 +30,14 @@ type args struct {
 func (WebfetchTool) Spec() tools.ToolSpec {
 	return tools.ToolSpec{
 		Name:        "web_fetch",
-		Description: "Fetches the content of a web page and returns markdown",
+		Description: "Fetches the content of a web page and returns markdown. Bare domains default to HTTPS.",
 		ReadOnly:    true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"url": map[string]any{
 					"type":        "string",
-					"description": "The HTTP or HTTPS URL of the web page to fetch",
+					"description": "The HTTP or HTTPS URL of the web page to fetch. Bare domains like example.com default to HTTPS.",
 				},
 			},
 			"required":             []string{"url"},
@@ -55,7 +55,7 @@ func (WebfetchTool) Execute(ctx context.Context, input json.RawMessage) (tools.T
 	if strings.TrimSpace(rawURL) == "" {
 		return tools.ToolResult{}, fmt.Errorf("missing url")
 	}
-	rawURL = strings.TrimSpace(rawURL)
+	rawURL = normalizeURL(strings.TrimSpace(rawURL))
 
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -96,4 +96,11 @@ func (WebfetchTool) Execute(ctx context.Context, input json.RawMessage) (tools.T
 	}
 
 	return tools.ToolResult{Content: markdown}, nil
+}
+
+func normalizeURL(rawURL string) string {
+	if !strings.Contains(rawURL, "://") {
+		return "https://" + rawURL
+	}
+	return rawURL
 }

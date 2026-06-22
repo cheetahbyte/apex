@@ -170,6 +170,23 @@ func TestNormalizeToolName_underscoreInsensitive(t *testing.T) {
 	}
 }
 
+func TestBuildToolPromptIncludesArgumentExamples(t *testing.T) {
+	prompt := buildToolPrompt(testSpecs)
+	for _, want := range []string{
+		"README.md",
+		`"name":"read_file"`,
+		`"path":"README.md"`,
+		"flxw.dev",
+		`"name":"web_fetch"`,
+		`"url":"https://flxw.dev"`,
+		"Never call a tool with empty arguments",
+	} {
+		if !contains(prompt, want) {
+			t.Fatalf("expected prompt to contain %q:\n%s", want, prompt)
+		}
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || (len(s) > 0 && containsStr(s, substr)))
 }
