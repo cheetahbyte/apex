@@ -40,9 +40,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.AppendAssistantChunk(string(msg))
 		return m, waitForChunk(m.chunks)
 
+	case statusMsg:
+		m.chat.AppendStatus(string(msg))
+		return m, waitForChunk(m.chunks)
+
 	case streamDoneMsg:
 		m.streaming = false
-		m.session.AppendAssistant(m.chat.CommitAssistant())
+		m.chat.CommitAssistant()
 		return m, nil
 
 	case errMsg:

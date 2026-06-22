@@ -4,8 +4,8 @@ import (
 	"context"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/cheetahbyte/apex/internal/agent"
 	"github.com/cheetahbyte/apex/internal/conversation"
-	"github.com/cheetahbyte/apex/internal/llm"
 	"github.com/cheetahbyte/apex/internal/tui/components/chat"
 	"github.com/cheetahbyte/apex/internal/tui/components/prompt"
 	"github.com/cheetahbyte/apex/internal/tui/components/sidebar"
@@ -15,6 +15,7 @@ import (
 type (
 	streamChunkMsg string
 	streamDoneMsg  struct{}
+	statusMsg      string
 	errMsg         struct{ err error }
 )
 
@@ -34,20 +35,20 @@ type Model struct {
 	session   *conversation.Session
 	streaming bool
 	chunks    chan tea.Msg
-	client    llm.Client
+	agent     *agent.Agent
 }
 
 // New creates the root TUI model. The LLM client is injected so the TUI
 // stays decoupled from any specific provider.
-func New(client llm.Client) Model {
+func New(agent *agent.Agent) Model {
 	return Model{
-		chat:     chat.New(),
-		prompt:   prompt.New(),
-		sidebar:  sidebar.New(),
-		status:   statusline.New(),
-		session:  conversation.NewSession(),
-		client:   client,
-		chunks:   make(chan tea.Msg),
+		chat:    chat.New(),
+		prompt:  prompt.New(),
+		sidebar: sidebar.New(),
+		status:  statusline.New(),
+		session: conversation.NewSession(),
+		agent:   agent,
+		chunks:  make(chan tea.Msg),
 	}
 }
 
@@ -59,7 +60,7 @@ func (m Model) Init() tea.Cmd {
 // events into the chunks channel so Bubble Tea can process them as messages.
 func (m Model) spawnStream() tea.Cmd {
 	return func() tea.Msg {
-		events := m.client.Stream(context.Background(), m.session.Messages())
+		events := m.agent.Run(context.Background(), m.session)
 		go func() {
 			for ev := range events {
 				switch {
@@ -69,8 +70,12 @@ func (m Model) spawnStream() tea.Cmd {
 				case ev.Done:
 					m.chunks <- streamDoneMsg{}
 					return
+				case ev.Status != "":
+					m.chunks <- statusMsg(ev.Status)
 				default:
-					m.chunks <- streamChunkMsg(ev.Delta)
+					if ev.Delta != "" {
+						m.chunks <- streamChunkMsg(ev.Delta)
+					}
 				}
 			}
 		}()

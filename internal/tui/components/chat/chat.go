@@ -97,6 +97,13 @@ func (m *Model) AppendError(text string) {
 	m.viewport.GotoBottom()
 }
 
+// AppendStatus adds a status line (e.g. tool execution) to the rendered output.
+func (m *Model) AppendStatus(text string) {
+	m.output += "\n" + text + "\n"
+	m.viewport.SetContent(m.output)
+	m.viewport.GotoBottom()
+}
+
 // Style returns the chat box style. Border is added outside Width/Height,
 // padding is counted inside.
 func Style() lipgloss.Style {

@@ -7,12 +7,22 @@ const (
 	RoleSystem    Role = "system"
 	RoleUser      Role = "user"
 	RoleAssistant Role = "assistant"
+	RoleTool      Role = "tool"
 )
+
+// ToolCall is a provider-neutral function call requested by the model.
+type ToolCall struct {
+	ID        string
+	Name      string
+	Arguments string
+}
 
 // Message is a single chat message with a role and content.
 type Message struct {
-	Role    Role
-	Content string
+	Role       Role
+	Content    string
+	ToolCalls  []ToolCall
+	ToolCallID string
 }
 
 // Session tracks the full conversation history sent to and received from
@@ -35,6 +45,11 @@ func (s *Session) AppendUser(content string) {
 // AppendAssistant adds an assistant response to the history.
 func (s *Session) AppendAssistant(content string) {
 	s.messages = append(s.messages, Message{Role: RoleAssistant, Content: content})
+}
+
+// AppendMessage adds a fully-specified message, including tool calls/results.
+func (s *Session) AppendMessage(message Message) {
+	s.messages = append(s.messages, message)
 }
 
 // AppendSystem adds a system prompt to the history.
