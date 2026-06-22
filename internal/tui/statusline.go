@@ -11,7 +11,7 @@ func (m Model) renderStatusLine(width int) string {
 	left := " Apex "
 	right := fmt.Sprintf(
 		" msgs:%d  input:%d/%d  size:%dx%d ",
-		len(m.messages),
+		m.session.Len(),
 		len(m.input.Value()),
 		m.input.CharLimit,
 		m.width,

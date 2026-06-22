@@ -6,12 +6,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-func SyncChat(m Model, message string) {
-	m.output += string(message)
-	m.chat.SetContent(m.output)
-	m.chat.GotoBottom()
-}
-
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -37,19 +31,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.input.Reset()
 			m.streaming = true
-			m.output += "\n\n>" + prompt + "\n"
+			m.session.AppendUser(prompt)
+			m.assistantBuf = ""
+			m.output += "\n\n> " + prompt + "\n"
 			m.chat.SetContent(m.output)
 			m.chat.GotoBottom()
-			return m, tea.Batch(m.spawnStream(prompt), waitForChunk(m.chunks))
+			return m, tea.Batch(m.spawnStream(), waitForChunk(m.chunks))
 		}
+
 	case streamChunkMsg:
-		SyncChat(m, string(msg))
+		// Mutate m directly (not a copy) and return it. The old
+		// SyncChat helper took m by value and discarded the result.
+		m.output += string(msg)
+		m.assistantBuf += string(msg)
+		m.chat.SetContent(m.output)
+		m.chat.GotoBottom()
 		return m, waitForChunk(m.chunks)
+
 	case streamDoneMsg:
 		m.streaming = false
+		m.session.AppendAssistant(m.assistantBuf)
+		m.assistantBuf = ""
 		return m, nil
+
 	case errMsg:
 		m.streaming = false
+		m.assistantBuf = ""
 		m.output += "\n[error] " + msg.err.Error()
 		m.chat.SetContent(m.output)
 		m.chat.GotoBottom()
