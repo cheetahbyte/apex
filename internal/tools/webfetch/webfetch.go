@@ -16,7 +16,10 @@ import (
 
 type WebfetchTool struct{}
 
-const maxResponseBytes = 2 * 1024 * 1024
+const (
+	maxResponseBytes = 2 * 1024 * 1024
+	browserUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+)
 
 var httpClient = &http.Client{Timeout: 15 * time.Second}
 
@@ -66,7 +69,9 @@ func (WebfetchTool) Execute(ctx context.Context, input json.RawMessage) (tools.T
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Header.Set("User-Agent", "apex/0.1")
+	req.Header.Set("User-Agent", browserUserAgent)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
