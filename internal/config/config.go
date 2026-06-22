@@ -29,7 +29,7 @@ type Config struct {
 // for local Ollama development.
 func Default() Config {
 	return Config{
-		Model:    envOr("APEX_MODEL", "llama3.2"),
+		Model:    envOr("APEX_MODEL", "gemma4:12b"),
 		BaseURL:  envOr("APEX_BASE_URL", "http://localhost:11434/v1"),
 		APIKey:   envOr("APEX_API_KEY", "ollama"),
 		ToolMode: ToolMode(envOr("APEX_TOOL_MODE", "auto")),

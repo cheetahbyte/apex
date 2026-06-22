@@ -11,5 +11,6 @@ func NewRegistry() *tools.Registry {
 	r := tools.NewRegistry()
 	r.Register(files.ReadFileTool{})
 	r.Register(webfetch.WebfetchTool{})
+	r.Register(files.TreeTool{})
 	return r
 }
