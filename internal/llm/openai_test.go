@@ -1,13 +1,32 @@
 package llm
 
 import (
+	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/cheetahbyte/apex/internal/conversation"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/param"
 )
+
+type testBearerSource struct {
+	tokenCalls   int
+	refreshCalls int
+}
+
+func (s *testBearerSource) Token(ctx context.Context) (string, error) {
+	s.tokenCalls++
+	return "old", nil
+}
+
+func (s *testBearerSource) Refresh(ctx context.Context) (string, error) {
+	s.refreshCalls++
+	return "new", nil
+}
 
 func TestToOpenAIMessages_assistantToolCallNoContent(t *testing.T) {
 	msgs := []conversation.Message{
@@ -80,5 +99,39 @@ func TestToOpenAIMessages_assistantToolCallNoContent(t *testing.T) {
 	// Content.OfString must NOT be omitted (nil would be omitted, empty "" is present)
 	if param.IsOmitted(ap.Content.OfString) {
 		t.Fatal("content must be present string (not nil); Ollama rejects nil content")
+	}
+}
+
+func TestAuthMiddlewareRefreshesOnUnauthorized(t *testing.T) {
+	source := &testBearerSource{}
+	middleware := authMiddleware(source)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://example.com", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader("{}")), nil
+	}
+	var authHeaders []string
+	next := func(req *http.Request) (*http.Response, error) {
+		authHeaders = append(authHeaders, req.Header.Get("Authorization"))
+		status := http.StatusOK
+		if len(authHeaders) == 1 {
+			status = http.StatusUnauthorized
+		}
+		return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	}
+	resp, err := middleware(req, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected retry response 200, got %d", resp.StatusCode)
+	}
+	if source.tokenCalls != 1 || source.refreshCalls != 1 {
+		t.Fatalf("unexpected calls token=%d refresh=%d", source.tokenCalls, source.refreshCalls)
+	}
+	if len(authHeaders) != 2 || authHeaders[0] != "Bearer old" || authHeaders[1] != "Bearer new" {
+		t.Fatalf("unexpected auth headers %#v", authHeaders)
 	}
 }

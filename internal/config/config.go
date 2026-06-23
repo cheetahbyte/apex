@@ -19,20 +19,22 @@ const (
 // Config holds runtime settings for the LLM provider. Precedence:
 // env var > default. CLI flags can be layered on top later via cobra.
 type Config struct {
-	Model    string
-	BaseURL  string
-	APIKey   string
-	ToolMode ToolMode
+	Model        string
+	BaseURL      string
+	APIKey       string
+	ToolMode     ToolMode
+	AuthProvider string
 }
 
 // Default returns a Config populated from env vars with sensible fallbacks
 // for local Ollama development.
 func Default() Config {
 	return Config{
-		Model:    envOr("APEX_MODEL", "gemma4:12b"),
-		BaseURL:  envOr("APEX_BASE_URL", "http://localhost:11434/v1"),
-		APIKey:   envOr("APEX_API_KEY", "ollama"),
-		ToolMode: ToolMode(envOr("APEX_TOOL_MODE", "auto")),
+		Model:        envOr("APEX_MODEL", "gemma4:12b"),
+		BaseURL:      envOr("APEX_BASE_URL", "http://localhost:11434/v1"),
+		APIKey:       envOr("APEX_API_KEY", "ollama"),
+		ToolMode:     ToolMode(envOr("APEX_TOOL_MODE", "auto")),
+		AuthProvider: os.Getenv("APEX_AUTH_PROVIDER"),
 	}
 }
 

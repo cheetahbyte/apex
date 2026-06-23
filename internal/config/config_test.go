@@ -58,6 +58,15 @@ func TestDefault_baseURLFromEnv(t *testing.T) {
 	}
 }
 
+func TestDefault_authProviderFromEnv(t *testing.T) {
+	os.Setenv("APEX_AUTH_PROVIDER", "openai-codex")
+	defer os.Unsetenv("APEX_AUTH_PROVIDER")
+	cfg := Default()
+	if cfg.AuthProvider != "openai-codex" {
+		t.Fatalf("expected auth provider from env, got %q", cfg.AuthProvider)
+	}
+}
+
 func TestToolMode_constants(t *testing.T) {
 	if ToolModeAuto != "auto" {
 		t.Fatal("ToolModeAuto should be 'auto'")

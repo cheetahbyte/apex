@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/cheetahbyte/apex/internal/conversation"
 	"github.com/openai/openai-go/v3"
@@ -17,6 +18,11 @@ type OpenAIClient struct {
 	model  string
 }
 
+type BearerTokenSource interface {
+	Token(ctx context.Context) (string, error)
+	Refresh(ctx context.Context) (string, error)
+}
+
 // NewOpenAIClient creates a client configured for an OpenAI-compatible
 // endpoint. For local Ollama, pass baseURL="http://localhost:11434/v1"
 // and apiKey="ollama".
@@ -26,6 +32,44 @@ func NewOpenAIClient(model, baseURL, apiKey string) *OpenAIClient {
 		option.WithAPIKey(apiKey),
 	)
 	return &OpenAIClient{client: c, model: model}
+}
+
+func NewOpenAIClientWithTokenSource(model, baseURL string, source BearerTokenSource) *OpenAIClient {
+	c := openai.NewClient(
+		option.WithBaseURL(baseURL),
+		option.WithMiddleware(authMiddleware(source)),
+	)
+	return &OpenAIClient{client: c, model: model}
+}
+
+func authMiddleware(source BearerTokenSource) option.Middleware {
+	return func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
+		token, err := source.Token(req.Context())
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := next(req)
+		if err != nil || resp == nil || resp.StatusCode != http.StatusUnauthorized {
+			return resp, err
+		}
+		if req.GetBody == nil {
+			return resp, err
+		}
+		refreshed, refreshErr := source.Refresh(req.Context())
+		if refreshErr != nil {
+			return resp, err
+		}
+		_ = resp.Body.Close()
+		retry := req.Clone(req.Context())
+		body, bodyErr := req.GetBody()
+		if bodyErr != nil {
+			return resp, err
+		}
+		retry.Body = body
+		retry.Header.Set("Authorization", "Bearer "+refreshed)
+		return next(retry)
+	}
 }
 
 // Capabilities reports OpenAI-compatible native tool support.

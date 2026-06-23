@@ -4,7 +4,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/cheetahbyte/apex/internal/agent"
 	"github.com/cheetahbyte/apex/internal/config"
-	"github.com/cheetahbyte/apex/internal/llm"
 	"github.com/cheetahbyte/apex/internal/llm/toolclient"
 	"github.com/cheetahbyte/apex/internal/tools/builtin"
 	"github.com/cheetahbyte/apex/internal/tui"
@@ -16,11 +15,14 @@ var rootCmd = &cobra.Command{
 	Short: "Apex is a terminal coding agent",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := config.Default()
-		base := llm.NewOpenAIClient(cfg.Model, cfg.BaseURL, cfg.APIKey)
+		base, err := newLLMClient(cfg)
+		if err != nil {
+			return err
+		}
 		client := toolclient.New(base, toolclient.ModeFromString(string(cfg.ToolMode)))
 		registry := builtin.NewRegistry()
 		apexAgent := agent.New(client, registry)
-		_, err := tea.NewProgram(tui.New(apexAgent)).Run()
+		_, err = tea.NewProgram(tui.New(apexAgent)).Run()
 		return err
 	},
 }
