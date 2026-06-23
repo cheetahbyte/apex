@@ -3,10 +3,11 @@ package chat
 import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
 )
 
-// Model is the chat viewport component. It owns the rendered output text,
+// Model is the chat viewport component. It owns the raw output text,
 // the scrollable viewport, and a buffer that accumulates the in-flight
 // assistant response until the stream completes.
 type Model struct {
@@ -22,11 +23,12 @@ type Model struct {
 func New() Model {
 	output := "Apex ready."
 	vp := viewport.New()
-	vp.SetContent(output)
-	return Model{
+	m := Model{
 		viewport: vp,
 		output:   output,
 	}
+	m.refreshOutput()
+	return m
 }
 
 // Update forwards messages to the viewport (scrolling, mouse, etc.).
@@ -58,21 +60,22 @@ func (m *Model) SetSize(width, height int) {
 	fw, fh := style.GetFrameSize()
 	m.viewport.SetWidth(safeSub(width, fw))
 	m.viewport.SetHeight(safeSub(height, fh))
+	m.refreshOutput()
 }
 
-// AppendUser adds a user prompt to the rendered output.
+// AppendUser appends user input to the raw output and rerenders markdown.
 func (m *Model) AppendUser(text string) {
 	m.output += "\n\n> " + text + "\n"
-	m.viewport.SetContent(m.output)
+	m.refreshOutput()
 	m.viewport.GotoBottom()
 }
 
-// AppendAssistantChunk appends a streaming text chunk to the rendered
-// output and accumulates it in the assistant buffer.
+// AppendAssistantChunk appends a streaming text chunk to the output and
+// assistant buffer, then rerenders markdown.
 func (m *Model) AppendAssistantChunk(chunk string) {
 	m.output += chunk
 	m.assistantBuf += chunk
-	m.viewport.SetContent(m.output)
+	m.refreshOutput()
 	m.viewport.GotoBottom()
 }
 
@@ -90,18 +93,40 @@ func (m *Model) DiscardAssistant() {
 	m.assistantBuf = ""
 }
 
-// AppendError adds an error line to the rendered output.
+// AppendError adds an error line to the output and rerenders markdown.
 func (m *Model) AppendError(text string) {
 	m.output += "\n[error] " + text
-	m.viewport.SetContent(m.output)
+	m.refreshOutput()
 	m.viewport.GotoBottom()
 }
 
-// AppendStatus adds a status line (e.g. tool execution) to the rendered output.
+// AppendStatus adds a status line (e.g. tool execution) and rerenders markdown.
 func (m *Model) AppendStatus(text string) {
 	m.output += "\n" + text + "\n"
-	m.viewport.SetContent(m.output)
+	m.refreshOutput()
 	m.viewport.GotoBottom()
+}
+
+func (m *Model) refreshOutput() {
+	width := m.viewport.Width()
+	if width <= 0 {
+		width = 80
+	}
+
+	rendered := m.output
+
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle("dark"),
+		glamour.WithWordWrap(width),
+	)
+	if err == nil {
+		if out, err := r.Render(m.output); err == nil {
+			rendered = out
+		}
+		_ = r.Close()
+	}
+
+	m.viewport.SetContent(rendered)
 }
 
 // Style returns the chat box style. Border is added outside Width/Height,
