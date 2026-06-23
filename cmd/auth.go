@@ -3,9 +3,11 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"time"
 
+	"github.com/charmbracelet/x/term"
 	"github.com/cheetahbyte/apex/internal/auth"
 	"github.com/cheetahbyte/apex/internal/auth/oauth"
 	authsources "github.com/cheetahbyte/apex/internal/auth/sources"
@@ -136,7 +138,35 @@ var authRefreshCmd = &cobra.Command{
 	},
 }
 
+var apiKey string
+
+var authSetKeyCmd = &cobra.Command{
+	Use:   "set-key <source>",
+	Short: "Store an API key credential source",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		manager, err := newAuthManager()
+		if err != nil {
+			return err
+		}
+		if apiKey == "" {
+			fmt.Print("API Key: ")
+			b, err := term.ReadPassword(os.Stdin.Fd())
+			fmt.Println()
+			if err != nil {
+				return err
+			}
+			apiKey = string(b)
+		}
+		if err := manager.StoreAPIKey(cmd.Context(), auth.CredentialSourceID(args[0]), apiKey); err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStderr(), "Stored API key for %s.\n", args[0])
+		return nil
+	},
+}
+
 func init() {
-	authCmd.AddCommand(authLoginCmd, authStatusCmd, authLogoutCmd, authRefreshCmd)
+	authCmd.AddCommand(authLoginCmd, authStatusCmd, authLogoutCmd, authRefreshCmd, authSetKeyCmd)
 	rootCmd.AddCommand(authCmd)
 }

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -68,6 +69,41 @@ func (m *Manager) StoreLogin(ctx context.Context, source OAuthCredentialSource, 
 		PlanType:     claims.PlanType,
 	}
 	return m.store.Save(ctx, file)
+}
+
+func (m *Manager) StoreAPIKey(ctx context.Context, sourceID CredentialSourceID, apiKey string) error {
+	if sourceID == "" {
+		return fmt.Errorf("credential source is required")
+	}
+	if strings.TrimSpace(apiKey) == "" {
+		return fmt.Errorf("api key is required")
+	}
+	file, err := m.store.Load(ctx)
+	if err != nil {
+		return err
+	}
+	(*file)[canonicalSourceID(sourceID)] = SourceAuth{
+		Type: AuthKindAPIKey,
+		Key:  apiKey,
+	}
+	return m.store.Save(ctx, file)
+}
+
+func (m *Manager) APIKey(ctx context.Context, sourceID CredentialSourceID) (string, error) {
+	file, err := m.store.Load(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	sourceID = canonicalSourceID(sourceID)
+	auth, ok := (*file)[sourceID]
+	if !ok || auth.Key == "" {
+		return "", fmt.Errorf("no api key found for source %s", sourceID)
+	}
+	if auth.Type != AuthKindAPIKey {
+		return "", fmt.Errorf("credential source %s is not an api key source", sourceID)
+	}
+	return auth.Key, nil
 }
 
 func (m *Manager) Token(ctx context.Context, sourceID CredentialSourceID) (string, error) {
