@@ -13,18 +13,18 @@ import (
 	"github.com/cheetahbyte/apex/internal/auth/oauth"
 )
 
-type testOAuthProvider struct{ tokenEndpoint string }
+type testOAuthSource struct{ tokenEndpoint string }
 
-func (p testOAuthProvider) ID() ProviderID        { return "test" }
-func (p testOAuthProvider) DisplayName() string   { return "Test" }
-func (p testOAuthProvider) AuthKind() AuthKind    { return AuthKindOAuth2 }
-func (p testOAuthProvider) Issuer() string        { return "https://issuer.example" }
-func (p testOAuthProvider) ClientID() string      { return "client" }
-func (p testOAuthProvider) Scopes() []string      { return []string{"openid"} }
-func (p testOAuthProvider) RedirectPath() string  { return "/callback" }
-func (p testOAuthProvider) DefaultPort() int      { return 1455 }
-func (p testOAuthProvider) AuthEndpoint() string  { return "https://issuer.example/authorize" }
-func (p testOAuthProvider) TokenEndpoint() string { return p.tokenEndpoint }
+func (p testOAuthSource) ID() CredentialSourceID { return "test" }
+func (p testOAuthSource) DisplayName() string    { return "Test" }
+func (p testOAuthSource) AuthKind() AuthKind     { return AuthKindOAuth2 }
+func (p testOAuthSource) Issuer() string         { return "https://issuer.example" }
+func (p testOAuthSource) ClientID() string       { return "client" }
+func (p testOAuthSource) Scopes() []string       { return []string{"openid"} }
+func (p testOAuthSource) RedirectPath() string   { return "/callback" }
+func (p testOAuthSource) DefaultPort() int       { return 1455 }
+func (p testOAuthSource) AuthEndpoint() string   { return "https://issuer.example/authorize" }
+func (p testOAuthSource) TokenEndpoint() string  { return p.tokenEndpoint }
 
 func TestManagerTokenRefreshesExpiredToken(t *testing.T) {
 	var refreshCalls int32
@@ -46,18 +46,17 @@ func TestManagerTokenRefreshesExpiredToken(t *testing.T) {
 
 	store := NewFileStore(filepath.Join(t.TempDir(), "auth.json"))
 	file := NewAuthFile()
-	file.ActiveProvider = "test"
-	file.Providers["test"] = ProviderAuth{
-		Kind:         AuthKindOAuth2,
+	(*file)["test"] = SourceAuth{
+		Type:         AuthKindOAuth2,
 		AccessToken:  "old-access",
 		RefreshToken: "refresh",
-		ExpiresAt:    time.Now().Add(-time.Hour),
+		Expires:      unixTime(time.Now().Add(-time.Hour)),
 	}
 	if err := store.Save(context.Background(), file); err != nil {
 		t.Fatal(err)
 	}
 
-	manager := NewManager(store, []Provider{testOAuthProvider{tokenEndpoint: server.URL}}, oauth.NewClient(server.Client()))
+	manager := NewManager(store, []CredentialSource{testOAuthSource{tokenEndpoint: server.URL}}, oauth.NewClient(server.Client()))
 	token, err := manager.Token(context.Background(), "test")
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +71,7 @@ func TestManagerTokenRefreshesExpiredToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Providers["test"].RefreshToken != "new-refresh" {
+	if (*loaded)["test"].RefreshToken != "new-refresh" {
 		t.Fatal("rotated refresh token not stored")
 	}
 }

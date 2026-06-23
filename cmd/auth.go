@@ -3,31 +3,32 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/cheetahbyte/apex/internal/auth"
 	"github.com/cheetahbyte/apex/internal/auth/oauth"
-	authproviders "github.com/cheetahbyte/apex/internal/auth/providers"
+	authsources "github.com/cheetahbyte/apex/internal/auth/sources"
 	"github.com/spf13/cobra"
 )
 
 var authCmd = &cobra.Command{
 	Use:   "auth",
-	Short: "Manage Apex auth providers",
+	Short: "Manage Apex credential sources",
 }
 
 var authLoginCmd = &cobra.Command{
-	Use:   "login <provider>",
-	Short: "Login to an auth provider",
+	Use:   "login <source>",
+	Short: "Login to a credential source",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		provider, err := authproviders.ByID(auth.ProviderID(args[0]))
+		source, err := authsources.ByID(auth.CredentialSourceID(args[0]))
 		if err != nil {
 			return err
 		}
-		oauthProvider, ok := provider.(auth.OAuthProvider)
+		oauthSource, ok := source.(auth.OAuthCredentialSource)
 		if !ok {
-			return fmt.Errorf("provider %q does not support OAuth login", args[0])
+			return fmt.Errorf("credential source %q does not support OAuth login", args[0])
 		}
 		manager, err := newAuthManager()
 		if err != nil {
@@ -36,22 +37,22 @@ var authLoginCmd = &cobra.Command{
 		flow := oauth.NewFlow(oauth.NewClient(nil))
 		ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Minute)
 		defer cancel()
-		fmt.Fprintf(cmd.OutOrStdout(), "Opening browser for %s login...\n", provider.DisplayName())
-		tokens, authURL, err := flow.Login(ctx, oauthProvider)
+		fmt.Fprintf(cmd.OutOrStdout(), "Opening browser for %s login...\n", source.DisplayName())
+		tokens, authURL, err := flow.Login(ctx, oauthSource)
 		if err != nil {
 			fmt.Fprintf(cmd.OutOrStdout(), "If browser did not open, visit:\n%s\n", authURL)
 			return err
 		}
-		if err := manager.StoreLogin(cmd.Context(), oauthProvider, tokens); err != nil {
+		if err := manager.StoreLogin(cmd.Context(), oauthSource, tokens); err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Logged in to %s.\n", provider.DisplayName())
+		fmt.Fprintf(cmd.OutOrStdout(), "Logged in to %s.\n", source.DisplayName())
 		return nil
 	},
 }
 
 var authStatusCmd = &cobra.Command{
-	Use:   "status [provider]",
+	Use:   "status [source]",
 	Short: "Show auth status",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -59,11 +60,28 @@ var authStatusCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		var providerID auth.ProviderID
-		if len(args) == 1 {
-			providerID = auth.ProviderID(args[0])
+		if len(args) == 0 {
+			statuses, err := manager.Statuses(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if len(statuses) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "No credential sources configured.")
+				return nil
+			}
+			sourceIDs := make([]string, 0, len(statuses))
+			for sourceID := range statuses {
+				sourceIDs = append(sourceIDs, string(sourceID))
+			}
+			sort.Strings(sourceIDs)
+			for _, sourceID := range sourceIDs {
+				writeSourceStatus(cmd, auth.CredentialSourceID(sourceID), statuses[auth.CredentialSourceID(sourceID)])
+			}
+			return nil
 		}
-		providerAuth, ok, err := manager.Status(cmd.Context(), providerID)
+
+		sourceID := auth.CredentialSourceID(args[0])
+		sourceAuth, ok, err := manager.Status(cmd.Context(), sourceID)
 		if err != nil {
 			return err
 		}
@@ -71,25 +89,29 @@ var authStatusCmd = &cobra.Command{
 			fmt.Fprintln(cmd.OutOrStdout(), "Not logged in.")
 			return nil
 		}
-		expiresAt := "unknown"
-		if !providerAuth.ExpiresAt.IsZero() {
-			expiresAt = providerAuth.ExpiresAt.Format(time.RFC3339)
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Logged in. kind=%s expires_at=%s email=%s\n", providerAuth.Kind, expiresAt, providerAuth.Claims.Email)
+		writeSourceStatus(cmd, sourceID, sourceAuth)
 		return nil
 	},
 }
 
+func writeSourceStatus(cmd *cobra.Command, sourceID auth.CredentialSourceID, sourceAuth auth.SourceAuth) {
+	expiresAt := "unknown"
+	if t := sourceAuth.ExpiresAt(); !t.IsZero() {
+		expiresAt = t.Format(time.RFC3339)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s: type=%s expires_at=%s email=%s account_id=%s\n", sourceID, sourceAuth.Type, expiresAt, sourceAuth.Email, sourceAuth.AccountID)
+}
+
 var authLogoutCmd = &cobra.Command{
-	Use:   "logout <provider>",
-	Short: "Logout from an auth provider",
+	Use:   "logout <source>",
+	Short: "Logout from a credential source",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		manager, err := newAuthManager()
 		if err != nil {
 			return err
 		}
-		if err := manager.Logout(cmd.Context(), auth.ProviderID(args[0])); err != nil {
+		if err := manager.Logout(cmd.Context(), auth.CredentialSourceID(args[0])); err != nil {
 			return err
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Logged out from %s.\n", args[0])
@@ -98,15 +120,15 @@ var authLogoutCmd = &cobra.Command{
 }
 
 var authRefreshCmd = &cobra.Command{
-	Use:   "refresh <provider>",
-	Short: "Refresh auth token",
+	Use:   "refresh <source>",
+	Short: "Refresh credential source token",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		manager, err := newAuthManager()
 		if err != nil {
 			return err
 		}
-		if _, err := manager.Refresh(cmd.Context(), auth.ProviderID(args[0])); err != nil {
+		if _, err := manager.Refresh(cmd.Context(), auth.CredentialSourceID(args[0])); err != nil {
 			return err
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Refreshed %s.\n", args[0])

@@ -12,37 +12,38 @@ import (
 const refreshWindow = 5 * time.Minute
 
 type Manager struct {
-	store     Store
-	providers map[ProviderID]Provider
-	client    *oauth.Client
-	mu        sync.Mutex
+	store   Store
+	sources map[CredentialSourceID]CredentialSource
+	client  *oauth.Client
+	mu      sync.Mutex
 }
 
-func NewManager(store Store, providers []Provider, client *oauth.Client) *Manager {
-	byID := make(map[ProviderID]Provider, len(providers))
-	for _, provider := range providers {
-		byID[provider.ID()] = provider
+func NewManager(store Store, sources []CredentialSource, client *oauth.Client) *Manager {
+	byID := make(map[CredentialSourceID]CredentialSource, len(sources))
+	for _, source := range sources {
+		byID[source.ID()] = source
 	}
 	if client == nil {
 		client = oauth.NewClient(nil)
 	}
-	return &Manager{store: store, providers: byID, client: client}
+	return &Manager{store: store, sources: byID, client: client}
 }
 
-func (m *Manager) Provider(id ProviderID) (Provider, bool) {
-	p, ok := m.providers[id]
-	return p, ok
+func (m *Manager) Source(id CredentialSourceID) (CredentialSource, bool) {
+	id = canonicalSourceID(id)
+	s, ok := m.sources[id]
+	return s, ok
 }
 
-func (m *Manager) Providers() []Provider {
-	out := make([]Provider, 0, len(m.providers))
-	for _, provider := range m.providers {
-		out = append(out, provider)
+func (m *Manager) Sources() []CredentialSource {
+	out := make([]CredentialSource, 0, len(m.sources))
+	for _, source := range m.sources {
+		out = append(out, source)
 	}
 	return out
 }
 
-func (m *Manager) StoreLogin(ctx context.Context, provider OAuthProvider, tokens oauth.TokenResponse) error {
+func (m *Manager) StoreLogin(ctx context.Context, source OAuthCredentialSource, tokens oauth.TokenResponse) error {
 	file, err := m.store.Load(ctx)
 	if err != nil {
 		return err
@@ -53,115 +54,119 @@ func (m *Manager) StoreLogin(ctx context.Context, provider OAuthProvider, tokens
 	if tokens.IDToken != "" {
 		claims, _ = ClaimsFromJWT(tokens.IDToken)
 	}
-	file.Providers[provider.ID()] = ProviderAuth{
-		Kind:         AuthKindOAuth2,
-		Issuer:       provider.Issuer(),
-		ClientID:     provider.ClientID(),
+	(*file)[source.ID()] = SourceAuth{
+		Type:         AuthKindOAuth2,
+		Issuer:       source.Issuer(),
+		ClientID:     source.ClientID(),
 		AccessToken:  tokens.AccessToken,
 		RefreshToken: tokens.RefreshToken,
 		IDToken:      tokens.IDToken,
-		ExpiresAt:    expiresAt,
-		LastRefresh:  now,
-		Claims:       claims,
+		Expires:      unixTime(expiresAt),
+		LastRefresh:  unixTime(now),
+		AccountID:    claims.AccountID,
+		Email:        claims.Email,
+		PlanType:     claims.PlanType,
 	}
-	file.ActiveProvider = provider.ID()
 	return m.store.Save(ctx, file)
 }
 
-func (m *Manager) Token(ctx context.Context, providerID ProviderID) (string, error) {
+func (m *Manager) Token(ctx context.Context, sourceID CredentialSourceID) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	file, auth, provider, err := m.loadOAuth(ctx, providerID)
+	file, auth, source, err := m.loadOAuth(ctx, sourceID)
 	if err != nil {
 		return "", err
 	}
 	if !needsRefresh(auth, time.Now().UTC()) {
 		return auth.AccessToken, nil
 	}
-	updated, err := m.refreshLocked(ctx, provider, auth)
+	updated, err := m.refreshLocked(ctx, source, auth)
 	if err != nil {
 		return auth.AccessToken, err
 	}
-	file.Providers[provider.ID()] = updated
+	(*file)[source.ID()] = updated
 	if err := m.store.Save(ctx, file); err != nil {
 		return "", err
 	}
 	return updated.AccessToken, nil
 }
 
-func (m *Manager) Refresh(ctx context.Context, providerID ProviderID) (string, error) {
+func (m *Manager) Refresh(ctx context.Context, sourceID CredentialSourceID) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	file, auth, provider, err := m.loadOAuth(ctx, providerID)
+	file, auth, source, err := m.loadOAuth(ctx, sourceID)
 	if err != nil {
 		return "", err
 	}
-	updated, err := m.refreshLocked(ctx, provider, auth)
+	updated, err := m.refreshLocked(ctx, source, auth)
 	if err != nil {
 		return "", err
 	}
-	file.Providers[provider.ID()] = updated
+	(*file)[source.ID()] = updated
 	if err := m.store.Save(ctx, file); err != nil {
 		return "", err
 	}
 	return updated.AccessToken, nil
 }
 
-func (m *Manager) Status(ctx context.Context, providerID ProviderID) (ProviderAuth, bool, error) {
+func (m *Manager) Status(ctx context.Context, sourceID CredentialSourceID) (SourceAuth, bool, error) {
 	file, err := m.store.Load(ctx)
 	if err != nil {
-		return ProviderAuth{}, false, err
+		return SourceAuth{}, false, err
 	}
-	if providerID == "" {
-		providerID = file.ActiveProvider
-	}
-	auth, ok := file.Providers[providerID]
+	auth, ok := (*file)[canonicalSourceID(sourceID)]
 	return auth, ok, nil
 }
 
-func (m *Manager) Logout(ctx context.Context, providerID ProviderID) error {
-	return m.store.Delete(ctx, providerID)
-}
-
-func (m *Manager) loadOAuth(ctx context.Context, providerID ProviderID) (*AuthFile, ProviderAuth, OAuthProvider, error) {
+func (m *Manager) Statuses(ctx context.Context) (AuthFile, error) {
 	file, err := m.store.Load(ctx)
 	if err != nil {
-		return nil, ProviderAuth{}, nil, err
+		return nil, err
 	}
-	if providerID == "" {
-		providerID = file.ActiveProvider
-	}
-	if providerID == "" {
-		return nil, ProviderAuth{}, nil, fmt.Errorf("no active auth provider")
-	}
-	provider, ok := m.providers[providerID]
-	if !ok {
-		return nil, ProviderAuth{}, nil, fmt.Errorf("unknown auth provider %q", providerID)
-	}
-	oauthProvider, ok := provider.(OAuthProvider)
-	if !ok {
-		return nil, ProviderAuth{}, nil, fmt.Errorf("provider %q does not support OAuth", providerID)
-	}
-	auth, ok := file.Providers[providerID]
-	if !ok || auth.AccessToken == "" {
-		return nil, ProviderAuth{}, nil, fmt.Errorf("not logged in to %s", providerID)
-	}
-	return file, auth, oauthProvider, nil
+	return *file, nil
 }
 
-func (m *Manager) refreshLocked(ctx context.Context, provider OAuthProvider, current ProviderAuth) (ProviderAuth, error) {
-	if current.RefreshToken == "" {
-		return ProviderAuth{}, fmt.Errorf("refresh token missing for %s", provider.ID())
+func (m *Manager) Logout(ctx context.Context, sourceID CredentialSourceID) error {
+	return m.store.Delete(ctx, sourceID)
+}
+
+func (m *Manager) loadOAuth(ctx context.Context, sourceID CredentialSourceID) (*AuthFile, SourceAuth, OAuthCredentialSource, error) {
+	file, err := m.store.Load(ctx)
+	if err != nil {
+		return nil, SourceAuth{}, nil, err
 	}
-	resp, err := m.client.Refresh(ctx, provider.TokenEndpoint(), oauth.RefreshRequest{
+	if sourceID == "" {
+		return nil, SourceAuth{}, nil, fmt.Errorf("no active credential source")
+	}
+	sourceID = canonicalSourceID(sourceID)
+	source, ok := m.sources[sourceID]
+	if !ok {
+		return nil, SourceAuth{}, nil, fmt.Errorf("unknown credential source %q", sourceID)
+	}
+	oauthSource, ok := source.(OAuthCredentialSource)
+	if !ok {
+		return nil, SourceAuth{}, nil, fmt.Errorf("credential source %q does not support OAuth", sourceID)
+	}
+	auth, ok := (*file)[sourceID]
+	if !ok || auth.AccessToken == "" {
+		return nil, SourceAuth{}, nil, fmt.Errorf("not logged in to %s", sourceID)
+	}
+	return file, auth, oauthSource, nil
+}
+
+func (m *Manager) refreshLocked(ctx context.Context, source OAuthCredentialSource, current SourceAuth) (SourceAuth, error) {
+	if current.RefreshToken == "" {
+		return SourceAuth{}, fmt.Errorf("refresh token missing for %s", source.ID())
+	}
+	resp, err := m.client.Refresh(ctx, source.TokenEndpoint(), oauth.RefreshRequest{
 		GrantType:    "refresh_token",
-		ClientID:     provider.ClientID(),
+		ClientID:     source.ClientID(),
 		RefreshToken: current.RefreshToken,
 	})
 	if err != nil {
-		return ProviderAuth{}, err
+		return SourceAuth{}, err
 	}
 	now := time.Now().UTC()
 	if resp.AccessToken != "" {
@@ -173,20 +178,22 @@ func (m *Manager) refreshLocked(ctx context.Context, provider OAuthProvider, cur
 	if resp.IDToken != "" {
 		current.IDToken = resp.IDToken
 		if claims, err := ClaimsFromJWT(resp.IDToken); err == nil {
-			current.Claims = claims
+			current.AccountID = claims.AccountID
+			current.Email = claims.Email
+			current.PlanType = claims.PlanType
 		}
 	}
-	current.ExpiresAt = expiryFromTokenResponse(resp, now)
-	current.LastRefresh = now
+	current.Expires = unixTime(expiryFromTokenResponse(resp, now))
+	current.LastRefresh = unixTime(now)
 	return current, nil
 }
 
-func needsRefresh(auth ProviderAuth, now time.Time) bool {
+func needsRefresh(auth SourceAuth, now time.Time) bool {
 	if auth.AccessToken == "" {
 		return true
 	}
-	if !auth.ExpiresAt.IsZero() {
-		return !auth.ExpiresAt.After(now.Add(refreshWindow))
+	if expiresAt := auth.ExpiresAt(); !expiresAt.IsZero() {
+		return !expiresAt.After(now.Add(refreshWindow))
 	}
 	if exp, ok, err := JWTExpiration(auth.AccessToken); err == nil && ok {
 		return !exp.After(now.Add(refreshWindow))

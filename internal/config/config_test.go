@@ -58,12 +58,22 @@ func TestDefault_baseURLFromEnv(t *testing.T) {
 	}
 }
 
-func TestDefault_authProviderFromEnv(t *testing.T) {
+func TestDefault_credentialSourceFromEnv(t *testing.T) {
+	os.Setenv("APEX_CREDENTIAL_SOURCE", "openai-codex")
+	defer os.Unsetenv("APEX_CREDENTIAL_SOURCE")
+	cfg := Default()
+	if cfg.CredentialSource != "openai-codex" {
+		t.Fatalf("expected credential source from env, got %q", cfg.CredentialSource)
+	}
+}
+
+func TestDefault_credentialSourceFallsBackToOldAuthProviderEnv(t *testing.T) {
+	os.Unsetenv("APEX_CREDENTIAL_SOURCE")
 	os.Setenv("APEX_AUTH_PROVIDER", "openai-codex")
 	defer os.Unsetenv("APEX_AUTH_PROVIDER")
 	cfg := Default()
-	if cfg.AuthProvider != "openai-codex" {
-		t.Fatalf("expected auth provider from env, got %q", cfg.AuthProvider)
+	if cfg.CredentialSource != "openai-codex" {
+		t.Fatalf("expected credential source fallback from old env, got %q", cfg.CredentialSource)
 	}
 }
 

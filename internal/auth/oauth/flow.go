@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-type Provider interface {
+type Source interface {
 	ClientID() string
 	Scopes() []string
 	RedirectPath() string
@@ -31,7 +31,7 @@ func NewFlow(client *Client) *Flow {
 	return &Flow{Client: client, OpenBrowser: true}
 }
 
-func (f *Flow) Login(ctx context.Context, provider Provider) (TokenResponse, string, error) {
+func (f *Flow) Login(ctx context.Context, source Source) (TokenResponse, string, error) {
 	pkce, err := GeneratePKCE()
 	if err != nil {
 		return TokenResponse{}, "", err
@@ -40,7 +40,7 @@ func (f *Flow) Login(ctx context.Context, provider Provider) (TokenResponse, str
 	if err != nil {
 		return TokenResponse{}, "", err
 	}
-	server, err := StartCallbackServer(provider.DefaultPort(), provider.RedirectPath())
+	server, err := StartCallbackServer(source.DefaultPort(), source.RedirectPath())
 	if err != nil {
 		return TokenResponse{}, "", err
 	}
@@ -50,7 +50,7 @@ func (f *Flow) Login(ctx context.Context, provider Provider) (TokenResponse, str
 		_ = server.Shutdown(shutdownCtx)
 	}()
 
-	authURL := BuildAuthorizeURL(provider.AuthEndpoint(), provider.ClientID(), server.RedirectURI(), provider.Scopes(), pkce.Challenge, state)
+	authURL := BuildAuthorizeURL(source.AuthEndpoint(), source.ClientID(), server.RedirectURI(), source.Scopes(), pkce.Challenge, state)
 	if f.OpenBrowser {
 		_ = OpenBrowser(authURL)
 	}
@@ -68,9 +68,9 @@ func (f *Flow) Login(ctx context.Context, provider Provider) (TokenResponse, str
 	if result.Code == "" {
 		return TokenResponse{}, authURL, fmt.Errorf("oauth callback missing code")
 	}
-	tokens, err := f.Client.ExchangeCode(ctx, provider.TokenEndpoint(), CodeExchangeRequest{
+	tokens, err := f.Client.ExchangeCode(ctx, source.TokenEndpoint(), CodeExchangeRequest{
 		GrantType:    "authorization_code",
-		ClientID:     provider.ClientID(),
+		ClientID:     source.ClientID(),
 		Code:         result.Code,
 		CodeVerifier: pkce.Verifier,
 		RedirectURI:  server.RedirectURI(),

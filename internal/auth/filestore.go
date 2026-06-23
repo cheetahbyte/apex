@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 )
 
 const authFileName = "auth.json"
@@ -53,15 +54,9 @@ func (s *FileStore) Load(ctx context.Context) (*AuthFile, error) {
 		return nil, err
 	}
 
-	var file AuthFile
-	if err := json.Unmarshal(data, &file); err != nil {
+	file, err := decodeAuthFile(data)
+	if err != nil {
 		return nil, err
-	}
-	if file.Version == 0 {
-		file.Version = 1
-	}
-	if file.Providers == nil {
-		file.Providers = map[ProviderID]ProviderAuth{}
 	}
 	return &file, nil
 }
@@ -75,11 +70,8 @@ func (s *FileStore) Save(ctx context.Context, file *AuthFile) error {
 	if file == nil {
 		return fmt.Errorf("auth file is nil")
 	}
-	if file.Version == 0 {
-		file.Version = 1
-	}
-	if file.Providers == nil {
-		file.Providers = map[ProviderID]ProviderAuth{}
+	if *file == nil {
+		*file = AuthFile{}
 	}
 
 	data, err := json.MarshalIndent(file, "", "  ")
@@ -120,14 +112,84 @@ func (s *FileStore) Save(ctx context.Context, file *AuthFile) error {
 	return os.Rename(tmpName, s.path)
 }
 
-func (s *FileStore) Delete(ctx context.Context, providerID ProviderID) error {
+func (s *FileStore) Delete(ctx context.Context, sourceID CredentialSourceID) error {
 	file, err := s.Load(ctx)
 	if err != nil {
 		return err
 	}
-	delete(file.Providers, providerID)
-	if file.ActiveProvider == providerID {
-		file.ActiveProvider = ""
-	}
+	delete(*file, canonicalSourceID(sourceID))
 	return s.Save(ctx, file)
+}
+
+func decodeAuthFile(data []byte) (AuthFile, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	if providersRaw, ok := raw["providers"]; ok {
+		return decodeLegacyAuthFile(providersRaw)
+	}
+
+	var file AuthFile
+	if err := json.Unmarshal(data, &file); err != nil {
+		return nil, err
+	}
+	if file == nil {
+		file = AuthFile{}
+	}
+	return file, nil
+}
+
+func decodeLegacyAuthFile(providersRaw json.RawMessage) (AuthFile, error) {
+	var legacy map[CredentialSourceID]legacySourceAuth
+	if err := json.Unmarshal(providersRaw, &legacy); err != nil {
+		return nil, err
+	}
+	file := AuthFile{}
+	for id, auth := range legacy {
+		file[canonicalSourceID(id)] = auth.toSourceAuth()
+	}
+	return file, nil
+}
+
+type legacySourceAuth struct {
+	Kind         AuthKind  `json:"kind"`
+	Issuer       string    `json:"issuer,omitempty"`
+	ClientID     string    `json:"client_id,omitempty"`
+	AccessToken  string    `json:"access_token,omitempty"`
+	RefreshToken string    `json:"refresh_token,omitempty"`
+	IDToken      string    `json:"id_token,omitempty"`
+	ExpiresAt    time.Time `json:"expires_at,omitempty"`
+	LastRefresh  time.Time `json:"last_refresh,omitempty"`
+	Claims       Claims    `json:"claims,omitempty"`
+}
+
+func (a legacySourceAuth) toSourceAuth() SourceAuth {
+	authKind := a.Kind
+	switch authKind {
+	case "oauth2":
+		authKind = AuthKindOAuth2
+	case "api_key":
+		authKind = AuthKindAPIKey
+	}
+	return SourceAuth{
+		Type:         authKind,
+		AccessToken:  a.AccessToken,
+		RefreshToken: a.RefreshToken,
+		IDToken:      a.IDToken,
+		Expires:      unixTime(a.ExpiresAt),
+		LastRefresh:  unixTime(a.LastRefresh),
+		AccountID:    a.Claims.AccountID,
+		Email:        a.Claims.Email,
+		PlanType:     a.Claims.PlanType,
+		Issuer:       a.Issuer,
+		ClientID:     a.ClientID,
+	}
+}
+
+func canonicalSourceID(id CredentialSourceID) CredentialSourceID {
+	if id == "openai-codex" {
+		return "openai"
+	}
+	return id
 }
