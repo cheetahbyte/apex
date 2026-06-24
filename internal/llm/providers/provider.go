@@ -8,6 +8,7 @@ type ClientType string
 
 const (
 	ClientTypeOpenAICompatible ClientType = "openai-compatible"
+	ClientTypeCodex            ClientType = "codex"
 )
 
 type AuthType string
@@ -19,19 +20,20 @@ const (
 )
 
 type Provider struct {
-	ID           string
-	DisplayName  string
-	Aliases      []string
-	Client       ClientSpec
-	Auth         AuthSpec
-	DefaultModel string
-	ToolMode     config.ToolMode
+	ID          string
+	DisplayName string
+	Aliases     []string
+	Client      ClientSpec
+	Auth        AuthSpec
+	ToolMode    config.ToolMode
 }
 
 type ClientSpec struct {
-	Type    ClientType
-	BaseURL string
-	Headers map[string]string
+	Type                 ClientType
+	BaseURL              string
+	Headers              map[string]string
+	SupportsModelListing bool
+	ModelsPath           string
 }
 
 type AuthSpec struct {
@@ -49,11 +51,18 @@ type PromptSpec struct {
 }
 
 type OAuthSpec struct {
-	Issuer        string
-	ClientID      string
-	Scopes        []string
-	RedirectPath  string
-	DefaultPort   int
-	AuthEndpoint  string
-	TokenEndpoint string
+	Issuer          string
+	ClientID        string
+	Scopes          []string
+	AuthorizeParams map[string]string
+	RedirectPath    string
+	DefaultPort     int
+	AuthEndpoint    string
+	TokenEndpoint   string
+}
+
+type ModelSpec struct {
+	ID          string
+	DisplayName string
+	Context     int
 }

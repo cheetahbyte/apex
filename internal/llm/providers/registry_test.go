@@ -11,7 +11,7 @@ func TestResolveDefaultsToOllama(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if provider.ID != "ollama" || provider.Client.BaseURL == "" || provider.DefaultModel == "" {
+	if provider.ID != "ollama" || provider.Client.BaseURL == "" {
 		t.Fatalf("unexpected default provider %+v", provider)
 	}
 }
@@ -41,13 +41,12 @@ func TestResolveCodexAliases(t *testing.T) {
 func TestResolveOverrides(t *testing.T) {
 	provider, err := Resolve(config.Config{
 		Provider: "opencode-go",
-		Model:    "custom-model",
 		BaseURL:  "http://example.test/v1",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if provider.DefaultModel != "custom-model" || provider.Client.BaseURL != "http://example.test/v1" {
+	if provider.Client.BaseURL != "http://example.test/v1" {
 		t.Fatalf("overrides not applied: %+v", provider)
 	}
 }

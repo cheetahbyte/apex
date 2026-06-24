@@ -25,6 +25,7 @@ type OAuthCredentialSource interface {
 	Issuer() string
 	ClientID() string
 	Scopes() []string
+	AuthorizeParams() map[string]string
 	RedirectPath() string
 	DefaultPort() int
 	AuthEndpoint() string

@@ -2,6 +2,7 @@ package providers
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/cheetahbyte/apex/internal/config"
@@ -10,12 +11,13 @@ import (
 func Builtins() map[string]Provider {
 	return map[string]Provider{
 		"ollama": {
-			ID:           "ollama",
-			DisplayName:  "Ollama",
-			DefaultModel: "gemma4:12b",
+			ID:          "ollama",
+			DisplayName: "Ollama",
 			Client: ClientSpec{
-				Type:    ClientTypeOpenAICompatible,
-				BaseURL: "http://localhost:11434/v1",
+				Type:                 ClientTypeOpenAICompatible,
+				BaseURL:              "http://localhost:11434/v1",
+				SupportsModelListing: true,
+				ModelsPath:           "/models",
 			},
 			Auth: AuthSpec{
 				Type:       AuthTypeAPIKey,
@@ -24,12 +26,13 @@ func Builtins() map[string]Provider {
 			ToolMode: config.ToolModeAuto,
 		},
 		"openrouter": {
-			ID:           "openrouter",
-			DisplayName:  "OpenRouter",
-			DefaultModel: "anthropic/claude-sonnet-4",
+			ID:          "openrouter",
+			DisplayName: "OpenRouter",
 			Client: ClientSpec{
-				Type:    ClientTypeOpenAICompatible,
-				BaseURL: "https://openrouter.ai/api/v1",
+				Type:                 ClientTypeOpenAICompatible,
+				BaseURL:              "https://openrouter.ai/api/v1",
+				SupportsModelListing: true,
+				ModelsPath:           "/models",
 			},
 			Auth: AuthSpec{
 				Type: AuthTypeAPIKey,
@@ -43,20 +46,25 @@ func Builtins() map[string]Provider {
 			ToolMode: config.ToolModeAuto,
 		},
 		"codex": {
-			ID:           "codex",
-			DisplayName:  "Codex",
-			Aliases:      []string{"openai", "openai-codex", "chatgpt"},
-			DefaultModel: "openai/gpt-5.5-fast",
+			ID:          "codex",
+			DisplayName: "Codex",
+			Aliases:     []string{"openai", "openai-codex", "chatgpt"},
 			Client: ClientSpec{
-				Type:    ClientTypeOpenAICompatible,
-				BaseURL: "https://api.openai.com/v1",
+				Type:                 ClientTypeCodex,
+				BaseURL:              "https://chatgpt.com/backend-api/codex",
+				SupportsModelListing: false,
 			},
 			Auth: AuthSpec{
 				Type: AuthTypeOAuthPKCE,
 				OAuth: &OAuthSpec{
-					Issuer:        "https://auth.openai.com",
-					ClientID:      "app_EMoamEEZ73f0CkXaXp7hrann",
-					Scopes:        []string{"openid", "email", "profile", "offline_access"},
+					Issuer:   "https://auth.openai.com",
+					ClientID: "app_EMoamEEZ73f0CkXaXp7hrann",
+					Scopes:   []string{"openid", "email", "profile", "offline_access"},
+					AuthorizeParams: map[string]string{
+						"id_token_add_organizations": "true",
+						"codex_cli_simplified_flow":  "true",
+						"originator":                 "apex",
+					},
 					RedirectPath:  "/auth/callback",
 					DefaultPort:   1455,
 					AuthEndpoint:  "https://auth.openai.com/oauth/authorize",
@@ -66,12 +74,13 @@ func Builtins() map[string]Provider {
 			ToolMode: config.ToolModeAuto,
 		},
 		"opencode-go": {
-			ID:           "opencode-go",
-			DisplayName:  "opencode-go",
-			DefaultModel: "deepseek-v4-flash",
+			ID:          "opencode-go",
+			DisplayName: "opencode-go",
 			Client: ClientSpec{
-				Type:    ClientTypeOpenAICompatible,
-				BaseURL: "https://api.opencode.ai/v1",
+				Type:                 ClientTypeOpenAICompatible,
+				BaseURL:              "https://opencode.ai/zen/go/v1",
+				SupportsModelListing: true,
+				ModelsPath:           "/models",
 			},
 			Auth: AuthSpec{
 				Type: AuthTypeAPIKey,
@@ -103,13 +112,20 @@ func Resolve(cfg config.Config) (Provider, error) {
 	if strings.TrimSpace(cfg.BaseURL) != "" {
 		provider.Client.BaseURL = strings.TrimSpace(cfg.BaseURL)
 	}
-	if strings.TrimSpace(cfg.Model) != "" {
-		provider.DefaultModel = strings.TrimSpace(cfg.Model)
-	}
 	if cfg.ToolMode != "" {
 		provider.ToolMode = cfg.ToolMode
 	}
 	return provider, nil
+}
+
+func All() []Provider {
+	providers := Builtins()
+	out := make([]Provider, 0, len(providers))
+	for _, provider := range providers {
+		out = append(out, provider)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 func aliasIndex(providers map[string]Provider) map[string]string {

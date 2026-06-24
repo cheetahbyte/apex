@@ -30,6 +30,7 @@ func TestBuildAuthorizeURL(t *testing.T) {
 		[]string{"openid", "email", "offline_access"},
 		"challenge",
 		"state",
+		map[string]string{"originator": "apex"},
 	)
 	parsed, err := url.Parse(raw)
 	if err != nil {
@@ -53,5 +54,8 @@ func TestBuildAuthorizeURL(t *testing.T) {
 	}
 	if query.Get("state") != "state" {
 		t.Fatal("missing state")
+	}
+	if query.Get("originator") != "apex" {
+		t.Fatal("missing extra param")
 	}
 }

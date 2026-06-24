@@ -23,6 +23,10 @@ type BearerTokenSource interface {
 	Refresh(ctx context.Context) (string, error)
 }
 
+type AccountIDSource interface {
+	AccountID(ctx context.Context) (string, error)
+}
+
 // NewOpenAIClient creates a client configured for an OpenAI-compatible
 // endpoint. For local Ollama, pass baseURL="http://localhost:11434/v1"
 // and apiKey="ollama".

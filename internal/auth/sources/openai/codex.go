@@ -26,6 +26,14 @@ func (CodexSource) Scopes() []string {
 	return []string{"openid", "email", "profile", "offline_access"}
 }
 
+func (CodexSource) AuthorizeParams() map[string]string {
+	return map[string]string{
+		"id_token_add_organizations": "true",
+		"codex_cli_simplified_flow":  "true",
+		"originator":                 "apex",
+	}
+}
+
 func (CodexSource) RedirectPath() string { return CodexRedirectPath }
 
 func (CodexSource) DefaultPort() int { return CodexDefaultPort }

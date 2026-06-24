@@ -56,15 +56,15 @@ func (c *Client) ExchangeCode(ctx context.Context, endpoint string, req CodeExch
 }
 
 func (c *Client) Refresh(ctx context.Context, endpoint string, req RefreshRequest) (TokenResponse, error) {
-	body, err := json.Marshal(req)
+	form := url.Values{}
+	form.Set("grant_type", req.GrantType)
+	form.Set("client_id", req.ClientID)
+	form.Set("refresh_token", req.RefreshToken)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return TokenResponse{}, err
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(string(body)))
-	if err != nil {
-		return TokenResponse{}, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	httpReq.Header.Set("Accept", "application/json")
 	return c.doTokenRequest(httpReq)
 }

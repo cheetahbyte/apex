@@ -9,8 +9,12 @@ import (
 )
 
 type jwtPayload struct {
-	Exp     int64  `json:"exp"`
-	Email   string `json:"email"`
+	Exp              int64  `json:"exp"`
+	Email            string `json:"email"`
+	ChatGPTAccountID string `json:"chatgpt_account_id"`
+	Organizations    []struct {
+		ID string `json:"id"`
+	} `json:"organizations"`
 	Profile struct {
 		Email string `json:"email"`
 	} `json:"https://api.openai.com/profile"`
@@ -42,9 +46,16 @@ func ClaimsFromJWT(token string) (Claims, error) {
 	if email == "" {
 		email = payload.Profile.Email
 	}
+	accountID := payload.ChatGPTAccountID
+	if accountID == "" {
+		accountID = payload.Auth.ChatGPTAccountID
+	}
+	if accountID == "" && len(payload.Organizations) > 0 {
+		accountID = payload.Organizations[0].ID
+	}
 	return Claims{
 		Email:     email,
-		AccountID: payload.Auth.ChatGPTAccountID,
+		AccountID: accountID,
 		PlanType:  payload.Auth.ChatGPTPlanType,
 	}, nil
 }

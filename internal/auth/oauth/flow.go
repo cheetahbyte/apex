@@ -13,6 +13,7 @@ import (
 type Source interface {
 	ClientID() string
 	Scopes() []string
+	AuthorizeParams() map[string]string
 	RedirectPath() string
 	DefaultPort() int
 	AuthEndpoint() string
@@ -50,7 +51,7 @@ func (f *Flow) Login(ctx context.Context, source Source) (TokenResponse, string,
 		_ = server.Shutdown(shutdownCtx)
 	}()
 
-	authURL := BuildAuthorizeURL(source.AuthEndpoint(), source.ClientID(), server.RedirectURI(), source.Scopes(), pkce.Challenge, state)
+	authURL := BuildAuthorizeURL(source.AuthEndpoint(), source.ClientID(), server.RedirectURI(), source.Scopes(), pkce.Challenge, state, source.AuthorizeParams())
 	if f.OpenBrowser {
 		_ = OpenBrowser(authURL)
 	}
@@ -78,7 +79,7 @@ func (f *Flow) Login(ctx context.Context, source Source) (TokenResponse, string,
 	return tokens, authURL, err
 }
 
-func BuildAuthorizeURL(endpoint, clientID, redirectURI string, scopes []string, challenge, state string) string {
+func BuildAuthorizeURL(endpoint, clientID, redirectURI string, scopes []string, challenge, state string, extraParams ...map[string]string) string {
 	values := url.Values{}
 	values.Set("response_type", "code")
 	values.Set("client_id", clientID)
@@ -87,6 +88,13 @@ func BuildAuthorizeURL(endpoint, clientID, redirectURI string, scopes []string, 
 	values.Set("code_challenge", challenge)
 	values.Set("code_challenge_method", "S256")
 	values.Set("state", state)
+	for _, params := range extraParams {
+		for key, value := range params {
+			if key != "" && value != "" {
+				values.Set(key, value)
+			}
+		}
+	}
 	return endpoint + "?" + values.Encode()
 }
 

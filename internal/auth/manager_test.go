@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -15,29 +16,30 @@ import (
 
 type testOAuthSource struct{ tokenEndpoint string }
 
-func (p testOAuthSource) ID() CredentialSourceID { return "test" }
-func (p testOAuthSource) DisplayName() string    { return "Test" }
-func (p testOAuthSource) AuthKind() AuthKind     { return AuthKindOAuth2 }
-func (p testOAuthSource) Issuer() string         { return "https://issuer.example" }
-func (p testOAuthSource) ClientID() string       { return "client" }
-func (p testOAuthSource) Scopes() []string       { return []string{"openid"} }
-func (p testOAuthSource) RedirectPath() string   { return "/callback" }
-func (p testOAuthSource) DefaultPort() int       { return 1455 }
-func (p testOAuthSource) AuthEndpoint() string   { return "https://issuer.example/authorize" }
-func (p testOAuthSource) TokenEndpoint() string  { return p.tokenEndpoint }
+func (p testOAuthSource) ID() CredentialSourceID             { return "test" }
+func (p testOAuthSource) DisplayName() string                { return "Test" }
+func (p testOAuthSource) AuthKind() AuthKind                 { return AuthKindOAuth2 }
+func (p testOAuthSource) Issuer() string                     { return "https://issuer.example" }
+func (p testOAuthSource) ClientID() string                   { return "client" }
+func (p testOAuthSource) Scopes() []string                   { return []string{"openid"} }
+func (p testOAuthSource) AuthorizeParams() map[string]string { return nil }
+func (p testOAuthSource) RedirectPath() string               { return "/callback" }
+func (p testOAuthSource) DefaultPort() int                   { return 1455 }
+func (p testOAuthSource) AuthEndpoint() string               { return "https://issuer.example/authorize" }
+func (p testOAuthSource) TokenEndpoint() string              { return p.tokenEndpoint }
 
 func TestManagerTokenRefreshesExpiredToken(t *testing.T) {
 	var refreshCalls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&refreshCalls, 1)
-		if r.Header.Get("Content-Type") != "application/json" {
+		if r.Header.Get("Content-Type") != "application/x-www-form-urlencoded" {
 			t.Fatalf("unexpected content type %q", r.Header.Get("Content-Type"))
 		}
-		var req oauth.RefreshRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := r.ParseForm(); err != nil {
 			t.Fatal(err)
 		}
-		if req.ClientID != "client" || req.RefreshToken != "refresh" || req.GrantType != "refresh_token" {
+		req := url.Values(r.Form)
+		if req.Get("client_id") != "client" || req.Get("refresh_token") != "refresh" || req.Get("grant_type") != "refresh_token" {
 			t.Fatalf("unexpected refresh request %+v", req)
 		}
 		_ = json.NewEncoder(w).Encode(oauth.TokenResponse{AccessToken: "new-access", RefreshToken: "new-refresh", ExpiresIn: 3600})

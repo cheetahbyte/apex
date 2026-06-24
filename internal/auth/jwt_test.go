@@ -24,3 +24,26 @@ func TestJWTExpirationAndClaims(t *testing.T) {
 		t.Fatalf("unexpected claims %+v", claims)
 	}
 }
+
+func TestClaimsFromJWTAccountIDVariants(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		payload string
+		want    string
+	}{
+		{name: "top-level", payload: `{"chatgpt_account_id":"acct_top"}`, want: "acct_top"},
+		{name: "auth-claim", payload: `{"https://api.openai.com/auth":{"chatgpt_account_id":"acct_auth"}}`, want: "acct_auth"},
+		{name: "organizations", payload: `{"organizations":[{"id":"acct_org"}]}`, want: "acct_org"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			token := "e30." + base64.RawURLEncoding.EncodeToString([]byte(tc.payload)) + ".sig"
+			claims, err := ClaimsFromJWT(token)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if claims.AccountID != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, claims.AccountID)
+			}
+		})
+	}
+}

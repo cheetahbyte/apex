@@ -58,6 +58,8 @@ func (s providerOAuthSource) ClientID() string { return s.spec.ClientID }
 
 func (s providerOAuthSource) Scopes() []string { return s.spec.Scopes }
 
+func (s providerOAuthSource) AuthorizeParams() map[string]string { return s.spec.AuthorizeParams }
+
 func (s providerOAuthSource) RedirectPath() string { return s.spec.RedirectPath }
 
 func (s providerOAuthSource) DefaultPort() int { return s.spec.DefaultPort }
