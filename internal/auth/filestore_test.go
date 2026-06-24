@@ -14,7 +14,7 @@ func TestFileStoreSaveLoadDelete(t *testing.T) {
 	ctx := context.Background()
 
 	file := NewAuthFile()
-	(*file)["openai"] = SourceAuth{Type: AuthKindOAuth2, AccessToken: "token"}
+	(*file)["openrouter"] = SourceAuth{Type: AuthKindAPIKey, Key: "token"}
 	if err := store.Save(ctx, file); err != nil {
 		t.Fatal(err)
 	}
@@ -32,18 +32,18 @@ func TestFileStoreSaveLoadDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if (*loaded)["openai"].AccessToken != "token" {
+	if (*loaded)["openrouter"].Key != "token" {
 		t.Fatal("stored token not loaded")
 	}
 
-	if err := store.Delete(ctx, "openai"); err != nil {
+	if err := store.Delete(ctx, "openrouter"); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err = store.Load(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := (*loaded)["openai"]; ok {
+	if _, ok := (*loaded)["openrouter"]; ok {
 		t.Fatal("credential source not deleted")
 	}
 }
@@ -72,7 +72,7 @@ func TestFileStoreLoadMigratesLegacyProvidersShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	auth := (*loaded)["openai"]
+	auth := (*loaded)["codex"]
 	if auth.Type != AuthKindOAuth2 || auth.AccessToken != "old-access" || auth.RefreshToken != "old-refresh" {
 		t.Fatalf("legacy auth not migrated: %+v", auth)
 	}

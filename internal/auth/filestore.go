@@ -188,8 +188,9 @@ func (a legacySourceAuth) toSourceAuth() SourceAuth {
 }
 
 func canonicalSourceID(id CredentialSourceID) CredentialSourceID {
-	if id == "openai-codex" {
-		return "openai"
+	switch id {
+	case "openai", "openai-codex", "chatgpt":
+		return "codex"
 	}
 	return id
 }

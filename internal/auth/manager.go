@@ -73,9 +73,10 @@ func (m *Manager) StoreLogin(ctx context.Context, source OAuthCredentialSource, 
 
 func (m *Manager) StoreAPIKey(ctx context.Context, sourceID CredentialSourceID, apiKey string) error {
 	if sourceID == "" {
-		return fmt.Errorf("credential source is required")
+		return fmt.Errorf("provider is required")
 	}
-	if strings.TrimSpace(apiKey) == "" {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
 		return fmt.Errorf("api key is required")
 	}
 	file, err := m.store.Load(ctx)
@@ -84,7 +85,7 @@ func (m *Manager) StoreAPIKey(ctx context.Context, sourceID CredentialSourceID, 
 	}
 	(*file)[canonicalSourceID(sourceID)] = SourceAuth{
 		Type: AuthKindAPIKey,
-		Key:  apiKey,
+		Key:  strings.TrimSpace(apiKey),
 	}
 	return m.store.Save(ctx, file)
 }
@@ -101,9 +102,33 @@ func (m *Manager) APIKey(ctx context.Context, sourceID CredentialSourceID) (stri
 		return "", fmt.Errorf("no api key found for source %s", sourceID)
 	}
 	if auth.Type != AuthKindAPIKey {
-		return "", fmt.Errorf("credential source %s is not an api key source", sourceID)
+		return "", fmt.Errorf("provider %s is not an api key provider", sourceID)
 	}
 	return auth.Key, nil
+}
+
+func (m *Manager) BearerToken(ctx context.Context, sourceID CredentialSourceID) (string, error) {
+	file, err := m.store.Load(ctx)
+	if err != nil {
+		return "", err
+	}
+	sourceID = canonicalSourceID(sourceID)
+	auth, ok := (*file)[sourceID]
+	if !ok {
+		return "", fmt.Errorf("no credential stored for %s", sourceID)
+	}
+	switch auth.Type {
+	case AuthKindAPIKey:
+		key := strings.TrimSpace(auth.Key)
+		if key == "" {
+			return "", fmt.Errorf("no api key found for source %s", sourceID)
+		}
+		return key, nil
+	case AuthKindOAuth2:
+		return m.Token(ctx, sourceID)
+	default:
+		return "", fmt.Errorf("unsupported credential type %q for %s", auth.Type, sourceID)
+	}
 }
 
 func (m *Manager) Token(ctx context.Context, sourceID CredentialSourceID) (string, error) {
@@ -174,16 +199,16 @@ func (m *Manager) loadOAuth(ctx context.Context, sourceID CredentialSourceID) (*
 		return nil, SourceAuth{}, nil, err
 	}
 	if sourceID == "" {
-		return nil, SourceAuth{}, nil, fmt.Errorf("no active credential source")
+		return nil, SourceAuth{}, nil, fmt.Errorf("no provider configured")
 	}
 	sourceID = canonicalSourceID(sourceID)
 	source, ok := m.sources[sourceID]
 	if !ok {
-		return nil, SourceAuth{}, nil, fmt.Errorf("unknown credential source %q", sourceID)
+		return nil, SourceAuth{}, nil, fmt.Errorf("unknown provider %q", sourceID)
 	}
 	oauthSource, ok := source.(OAuthCredentialSource)
 	if !ok {
-		return nil, SourceAuth{}, nil, fmt.Errorf("credential source %q does not support OAuth", sourceID)
+		return nil, SourceAuth{}, nil, fmt.Errorf("provider %q does not support OAuth", sourceID)
 	}
 	auth, ok := (*file)[sourceID]
 	if !ok || auth.AccessToken == "" {

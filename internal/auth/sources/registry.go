@@ -12,13 +12,13 @@ func Builtins() []auth.CredentialSource {
 }
 
 func ByID(id auth.CredentialSourceID) (auth.CredentialSource, error) {
-	if id == "openai-codex" {
-		id = "openai"
+	if id == "openai" || id == "openai-codex" || id == "chatgpt" {
+		id = "codex"
 	}
 	for _, source := range Builtins() {
 		if source.ID() == id {
 			return source, nil
 		}
 	}
-	return nil, fmt.Errorf("unknown credential source %q", id)
+	return nil, fmt.Errorf("unknown provider %q", id)
 }

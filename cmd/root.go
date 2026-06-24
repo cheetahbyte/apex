@@ -15,7 +15,7 @@ var rootCmd = &cobra.Command{
 	Short: "Apex is a terminal coding agent",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := config.Default()
-		base, err := newLLMClient(cfg)
+		base, err := newLLMClient(cmd.Context(), cfg)
 		if err != nil {
 			return err
 		}

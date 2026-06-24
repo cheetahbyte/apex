@@ -11,26 +11,35 @@ import (
 	"github.com/cheetahbyte/apex/internal/auth"
 	"github.com/cheetahbyte/apex/internal/auth/oauth"
 	authsources "github.com/cheetahbyte/apex/internal/auth/sources"
+	"github.com/cheetahbyte/apex/internal/config"
+	llmproviders "github.com/cheetahbyte/apex/internal/llm/providers"
 	"github.com/spf13/cobra"
 )
 
 var authCmd = &cobra.Command{
 	Use:   "auth",
-	Short: "Manage Apex credential sources",
+	Short: "Manage Apex provider credentials",
 }
 
 var authLoginCmd = &cobra.Command{
-	Use:   "login <source>",
-	Short: "Login to a credential source",
+	Use:   "login <provider>",
+	Short: "Login to an OAuth provider",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		provider, err := llmproviders.Resolve(config.Config{Provider: args[0]})
+		if err != nil {
+			return err
+		}
+		if provider.AuthKind != auth.AuthKindOAuth2 {
+			return fmt.Errorf("provider %q uses API keys; run apex auth set-key %s", provider.ID, provider.ID)
+		}
 		source, err := authsources.ByID(auth.CredentialSourceID(args[0]))
 		if err != nil {
 			return err
 		}
 		oauthSource, ok := source.(auth.OAuthCredentialSource)
 		if !ok {
-			return fmt.Errorf("credential source %q does not support OAuth login", args[0])
+			return fmt.Errorf("provider %q does not support OAuth login", args[0])
 		}
 		manager, err := newAuthManager()
 		if err != nil {
@@ -54,7 +63,7 @@ var authLoginCmd = &cobra.Command{
 }
 
 var authStatusCmd = &cobra.Command{
-	Use:   "status [source]",
+	Use:   "status [provider]",
 	Short: "Show auth status",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -68,7 +77,7 @@ var authStatusCmd = &cobra.Command{
 				return err
 			}
 			if len(statuses) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No credential sources configured.")
+				fmt.Fprintln(cmd.OutOrStdout(), "No provider credentials configured.")
 				return nil
 			}
 			sourceIDs := make([]string, 0, len(statuses))
@@ -105,8 +114,8 @@ func writeSourceStatus(cmd *cobra.Command, sourceID auth.CredentialSourceID, sou
 }
 
 var authLogoutCmd = &cobra.Command{
-	Use:   "logout <source>",
-	Short: "Logout from a credential source",
+	Use:   "logout <provider>",
+	Short: "Delete provider credentials",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		manager, err := newAuthManager()
@@ -122,8 +131,8 @@ var authLogoutCmd = &cobra.Command{
 }
 
 var authRefreshCmd = &cobra.Command{
-	Use:   "refresh <source>",
-	Short: "Refresh credential source token",
+	Use:   "refresh <provider>",
+	Short: "Refresh OAuth provider token",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		manager, err := newAuthManager()
@@ -141,10 +150,17 @@ var authRefreshCmd = &cobra.Command{
 var apiKey string
 
 var authSetKeyCmd = &cobra.Command{
-	Use:   "set-key <source>",
-	Short: "Store an API key credential source",
+	Use:   "set-key <provider>",
+	Short: "Store an API key provider credential",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		provider, err := llmproviders.Resolve(config.Config{Provider: args[0]})
+		if err != nil {
+			return err
+		}
+		if provider.AuthKind != auth.AuthKindAPIKey {
+			return fmt.Errorf("provider %q uses OAuth; run apex auth login %s", provider.ID, provider.ID)
+		}
 		manager, err := newAuthManager()
 		if err != nil {
 			return err

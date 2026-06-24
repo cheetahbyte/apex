@@ -75,3 +75,26 @@ func TestManagerTokenRefreshesExpiredToken(t *testing.T) {
 		t.Fatal("rotated refresh token not stored")
 	}
 }
+
+func TestManagerStoreAPIKeyAndBearerToken(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "auth.json"))
+	manager := NewManager(store, nil, nil)
+
+	if err := manager.StoreAPIKey(context.Background(), "openrouter", "  sk-test  "); err != nil {
+		t.Fatal(err)
+	}
+	key, err := manager.APIKey(context.Background(), "openrouter")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key != "sk-test" {
+		t.Fatalf("expected trimmed key, got %q", key)
+	}
+	token, err := manager.BearerToken(context.Background(), "openrouter")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "sk-test" {
+		t.Fatalf("expected bearer token from api key, got %q", token)
+	}
+}

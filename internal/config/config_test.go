@@ -59,7 +59,9 @@ func TestDefault_baseURLFromEnv(t *testing.T) {
 }
 
 func TestDefault_credentialSourceFromEnv(t *testing.T) {
+	os.Unsetenv("APEX_PROVIDER")
 	os.Setenv("APEX_CREDENTIAL_SOURCE", "openai-codex")
+	defer os.Unsetenv("APEX_PROVIDER")
 	defer os.Unsetenv("APEX_CREDENTIAL_SOURCE")
 	cfg := Default()
 	if cfg.CredentialSource != "openai-codex" {
@@ -68,12 +70,34 @@ func TestDefault_credentialSourceFromEnv(t *testing.T) {
 }
 
 func TestDefault_credentialSourceFallsBackToOldAuthProviderEnv(t *testing.T) {
+	os.Unsetenv("APEX_PROVIDER")
 	os.Unsetenv("APEX_CREDENTIAL_SOURCE")
 	os.Setenv("APEX_AUTH_PROVIDER", "openai-codex")
+	defer os.Unsetenv("APEX_PROVIDER")
 	defer os.Unsetenv("APEX_AUTH_PROVIDER")
 	cfg := Default()
 	if cfg.CredentialSource != "openai-codex" {
 		t.Fatalf("expected credential source fallback from old env, got %q", cfg.CredentialSource)
+	}
+}
+
+func TestDefault_providerFromEnv(t *testing.T) {
+	os.Setenv("APEX_PROVIDER", "openrouter")
+	defer os.Unsetenv("APEX_PROVIDER")
+	cfg := Default()
+	if cfg.Provider != "openrouter" {
+		t.Fatalf("expected provider from env, got %q", cfg.Provider)
+	}
+}
+
+func TestDefault_providerFallsBackToCredentialSource(t *testing.T) {
+	os.Unsetenv("APEX_PROVIDER")
+	os.Setenv("APEX_CREDENTIAL_SOURCE", "openrouter")
+	defer os.Unsetenv("APEX_PROVIDER")
+	defer os.Unsetenv("APEX_CREDENTIAL_SOURCE")
+	cfg := Default()
+	if cfg.Provider != "openrouter" {
+		t.Fatalf("expected provider fallback from credential source, got %q", cfg.Provider)
 	}
 }
 

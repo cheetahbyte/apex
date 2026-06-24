@@ -3,7 +3,7 @@ package openai
 import "github.com/cheetahbyte/apex/internal/auth"
 
 const (
-	CodexSourceID     auth.CredentialSourceID = "openai"
+	CodexSourceID     auth.CredentialSourceID = "codex"
 	CodexIssuer                               = "https://auth.openai.com"
 	CodexClientID                             = "app_EMoamEEZ73f0CkXaXp7hrann"
 	CodexRedirectPath                         = "/auth/callback"
