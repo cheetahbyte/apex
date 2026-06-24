@@ -15,6 +15,37 @@ type tokenSource struct {
 	id      auth.CredentialSourceID
 }
 
+type Credential struct {
+	APIKey      string
+	TokenSource llm.BearerTokenSource
+}
+
+type ClientBuilder interface {
+	Build(ctx context.Context, provider Provider, model string, credential Credential) (llm.Client, error)
+}
+
+type OpenAICompatibleBuilder struct{}
+
+func (OpenAICompatibleBuilder) Build(ctx context.Context, provider Provider, model string, credential Credential) (llm.Client, error) {
+	baseURL := strings.TrimSpace(provider.Client.BaseURL)
+	if baseURL == "" {
+		return nil, fmt.Errorf("provider %q has no base URL configured", provider.ID)
+	}
+	if credential.TokenSource != nil {
+		return llm.NewOpenAIClientWithTokenSource(model, baseURL, credential.TokenSource), nil
+	}
+	if strings.TrimSpace(credential.APIKey) == "" {
+		return nil, fmt.Errorf("provider %q has no API key configured", provider.ID)
+	}
+	return llm.NewOpenAIClient(model, baseURL, credential.APIKey), nil
+}
+
+func Builders() map[ClientType]ClientBuilder {
+	return map[ClientType]ClientBuilder{
+		ClientTypeOpenAICompatible: OpenAICompatibleBuilder{},
+	}
+}
+
 func (s tokenSource) Token(ctx context.Context) (string, error) {
 	return s.manager.BearerToken(ctx, s.id)
 }
@@ -38,8 +69,9 @@ func (s tokenSource) Refresh(ctx context.Context) (string, error) {
 }
 
 func Build(ctx context.Context, provider Provider, cfg config.Config, manager *auth.Manager) (llm.Client, error) {
-	if provider.Protocol != ProtocolOpenAICompatible {
-		return nil, fmt.Errorf("provider %q uses unsupported protocol %q", provider.ID, provider.Protocol)
+	builder, ok := Builders()[provider.Client.Type]
+	if !ok {
+		return nil, fmt.Errorf("provider %q uses unsupported client type %q", provider.ID, provider.Client.Type)
 	}
 	model := strings.TrimSpace(cfg.Model)
 	if model == "" {
@@ -48,29 +80,28 @@ func Build(ctx context.Context, provider Provider, cfg config.Config, manager *a
 	if model == "" {
 		return nil, fmt.Errorf("provider %q has no model configured", provider.ID)
 	}
-	baseURL := strings.TrimSpace(cfg.BaseURL)
-	if baseURL == "" {
-		baseURL = provider.BaseURL
-	}
-	if baseURL == "" {
-		return nil, fmt.Errorf("provider %q has no base URL configured", provider.ID)
-	}
 	if apiKey := strings.TrimSpace(cfg.APIKey); apiKey != "" {
-		return llm.NewOpenAIClient(model, baseURL, apiKey), nil
-	}
-	if provider.ID == "ollama" {
-		return llm.NewOpenAIClient(model, baseURL, "ollama"), nil
+		return builder.Build(ctx, provider, model, Credential{APIKey: apiKey})
 	}
 	if manager == nil {
 		return nil, fmt.Errorf("auth manager is required for provider %q", provider.ID)
 	}
 	sourceID := auth.CredentialSourceID(provider.ID)
-	if provider.AuthKind == auth.AuthKindAPIKey {
+	switch provider.Auth.Type {
+	case AuthTypeNone:
+		return builder.Build(ctx, provider, model, Credential{})
+	case AuthTypeAPIKey:
+		if strings.TrimSpace(provider.Auth.DefaultKey) != "" {
+			return builder.Build(ctx, provider, model, Credential{APIKey: strings.TrimSpace(provider.Auth.DefaultKey)})
+		}
 		apiKey, err := manager.APIKey(ctx, sourceID)
 		if err != nil {
 			return nil, err
 		}
-		return llm.NewOpenAIClient(model, baseURL, apiKey), nil
+		return builder.Build(ctx, provider, model, Credential{APIKey: apiKey})
+	case AuthTypeOAuthPKCE:
+		return builder.Build(ctx, provider, model, Credential{TokenSource: tokenSource{manager: manager, id: sourceID}})
+	default:
+		return nil, fmt.Errorf("provider %q uses unsupported auth type %q", provider.ID, provider.Auth.Type)
 	}
-	return llm.NewOpenAIClientWithTokenSource(model, baseURL, tokenSource{manager: manager, id: sourceID}), nil
 }

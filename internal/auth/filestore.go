@@ -153,15 +153,16 @@ func decodeLegacyAuthFile(providersRaw json.RawMessage) (AuthFile, error) {
 }
 
 type legacySourceAuth struct {
-	Kind         AuthKind  `json:"kind"`
-	Issuer       string    `json:"issuer,omitempty"`
-	ClientID     string    `json:"client_id,omitempty"`
-	AccessToken  string    `json:"access_token,omitempty"`
-	RefreshToken string    `json:"refresh_token,omitempty"`
-	IDToken      string    `json:"id_token,omitempty"`
-	ExpiresAt    time.Time `json:"expires_at,omitempty"`
-	LastRefresh  time.Time `json:"last_refresh,omitempty"`
-	Claims       Claims    `json:"claims,omitempty"`
+	Kind          AuthKind  `json:"kind"`
+	Issuer        string    `json:"issuer,omitempty"`
+	ClientID      string    `json:"client_id,omitempty"`
+	TokenEndpoint string    `json:"token_endpoint,omitempty"`
+	AccessToken   string    `json:"access_token,omitempty"`
+	RefreshToken  string    `json:"refresh_token,omitempty"`
+	IDToken       string    `json:"id_token,omitempty"`
+	ExpiresAt     time.Time `json:"expires_at,omitempty"`
+	LastRefresh   time.Time `json:"last_refresh,omitempty"`
+	Claims        Claims    `json:"claims,omitempty"`
 }
 
 func (a legacySourceAuth) toSourceAuth() SourceAuth {
@@ -173,17 +174,18 @@ func (a legacySourceAuth) toSourceAuth() SourceAuth {
 		authKind = AuthKindAPIKey
 	}
 	return SourceAuth{
-		Type:         authKind,
-		AccessToken:  a.AccessToken,
-		RefreshToken: a.RefreshToken,
-		IDToken:      a.IDToken,
-		Expires:      unixTime(a.ExpiresAt),
-		LastRefresh:  unixTime(a.LastRefresh),
-		AccountID:    a.Claims.AccountID,
-		Email:        a.Claims.Email,
-		PlanType:     a.Claims.PlanType,
-		Issuer:       a.Issuer,
-		ClientID:     a.ClientID,
+		Type:          authKind,
+		AccessToken:   a.AccessToken,
+		RefreshToken:  a.RefreshToken,
+		IDToken:       a.IDToken,
+		Expires:       unixTime(a.ExpiresAt),
+		LastRefresh:   unixTime(a.LastRefresh),
+		AccountID:     a.Claims.AccountID,
+		Email:         a.Claims.Email,
+		PlanType:      a.Claims.PlanType,
+		Issuer:        a.Issuer,
+		ClientID:      a.ClientID,
+		TokenEndpoint: a.TokenEndpoint,
 	}
 }
 

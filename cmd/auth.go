@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/cheetahbyte/apex/internal/auth"
 	"github.com/cheetahbyte/apex/internal/auth/oauth"
-	authsources "github.com/cheetahbyte/apex/internal/auth/sources"
 	"github.com/cheetahbyte/apex/internal/config"
 	llmproviders "github.com/cheetahbyte/apex/internal/llm/providers"
 	"github.com/spf13/cobra"
@@ -23,43 +22,77 @@ var authCmd = &cobra.Command{
 
 var authLoginCmd = &cobra.Command{
 	Use:   "login <provider>",
-	Short: "Login to an OAuth provider",
+	Short: "Login to a provider",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		provider, err := llmproviders.Resolve(config.Config{Provider: args[0]})
 		if err != nil {
 			return err
 		}
-		if provider.AuthKind != auth.AuthKindOAuth2 {
-			return fmt.Errorf("provider %q uses API keys; run apex auth set-key %s", provider.ID, provider.ID)
+		switch provider.Auth.Type {
+		case llmproviders.AuthTypeAPIKey:
+			return storeAPIKeyCredential(cmd, provider)
+		case llmproviders.AuthTypeOAuthPKCE:
+			return storeOAuthCredential(cmd, provider)
+		default:
+			return fmt.Errorf("provider %q does not declare a supported auth flow", provider.ID)
 		}
-		source, err := authsources.ByID(auth.CredentialSourceID(args[0]))
-		if err != nil {
-			return err
-		}
-		oauthSource, ok := source.(auth.OAuthCredentialSource)
-		if !ok {
-			return fmt.Errorf("provider %q does not support OAuth login", args[0])
-		}
-		manager, err := newAuthManager()
-		if err != nil {
-			return err
-		}
-		flow := oauth.NewFlow(oauth.NewClient(nil))
-		ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Minute)
-		defer cancel()
-		fmt.Fprintf(cmd.OutOrStdout(), "Opening browser for %s login...\n", source.DisplayName())
-		tokens, authURL, err := flow.Login(ctx, oauthSource)
-		if err != nil {
-			fmt.Fprintf(cmd.OutOrStdout(), "If browser did not open, visit:\n%s\n", authURL)
-			return err
-		}
-		if err := manager.StoreLogin(cmd.Context(), oauthSource, tokens); err != nil {
-			return err
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Logged in to %s.\n", source.DisplayName())
-		return nil
 	},
+}
+
+type providerOAuthSource struct {
+	id          auth.CredentialSourceID
+	displayName string
+	spec        llmproviders.OAuthSpec
+}
+
+func (s providerOAuthSource) ID() auth.CredentialSourceID { return s.id }
+
+func (s providerOAuthSource) DisplayName() string { return s.displayName }
+
+func (s providerOAuthSource) AuthKind() auth.AuthKind { return auth.AuthKindOAuth2 }
+
+func (s providerOAuthSource) Issuer() string { return s.spec.Issuer }
+
+func (s providerOAuthSource) ClientID() string { return s.spec.ClientID }
+
+func (s providerOAuthSource) Scopes() []string { return s.spec.Scopes }
+
+func (s providerOAuthSource) RedirectPath() string { return s.spec.RedirectPath }
+
+func (s providerOAuthSource) DefaultPort() int { return s.spec.DefaultPort }
+
+func (s providerOAuthSource) AuthEndpoint() string { return s.spec.AuthEndpoint }
+
+func (s providerOAuthSource) TokenEndpoint() string { return s.spec.TokenEndpoint }
+
+func storeOAuthCredential(cmd *cobra.Command, provider llmproviders.Provider) error {
+	if provider.Auth.OAuth == nil {
+		return fmt.Errorf("provider %q is missing OAuth configuration", provider.ID)
+	}
+	oauthSource := providerOAuthSource{
+		id:          auth.CredentialSourceID(provider.ID),
+		displayName: provider.DisplayName,
+		spec:        *provider.Auth.OAuth,
+	}
+	manager, err := newAuthManager()
+	if err != nil {
+		return err
+	}
+	flow := oauth.NewFlow(oauth.NewClient(nil))
+	ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Minute)
+	defer cancel()
+	fmt.Fprintf(cmd.OutOrStdout(), "Opening browser for %s login...\n", provider.DisplayName)
+	tokens, authURL, err := flow.Login(ctx, oauthSource)
+	if err != nil {
+		fmt.Fprintf(cmd.OutOrStdout(), "If browser did not open, visit:\n%s\n", authURL)
+		return err
+	}
+	if err := manager.StoreLogin(cmd.Context(), oauthSource, tokens); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Logged in to %s.\n", provider.DisplayName)
+	return nil
 }
 
 var authStatusCmd = &cobra.Command{
@@ -158,28 +191,45 @@ var authSetKeyCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if provider.AuthKind != auth.AuthKindAPIKey {
+		if provider.Auth.Type != llmproviders.AuthTypeAPIKey {
 			return fmt.Errorf("provider %q uses OAuth; run apex auth login %s", provider.ID, provider.ID)
 		}
-		manager, err := newAuthManager()
-		if err != nil {
-			return err
+		return storeAPIKeyCredential(cmd, provider)
+	},
+}
+
+func storeAPIKeyCredential(cmd *cobra.Command, provider llmproviders.Provider) error {
+	manager, err := newAuthManager()
+	if err != nil {
+		return err
+	}
+	key := apiKey
+	if key == "" {
+		label := "API Key"
+		secret := true
+		if len(provider.Auth.Prompts) > 0 {
+			label = provider.Auth.Prompts[0].Label
+			secret = provider.Auth.Prompts[0].Secret
 		}
-		if apiKey == "" {
-			fmt.Print("API Key: ")
+		fmt.Fprintf(cmd.OutOrStdout(), "%s: ", label)
+		if secret {
 			b, err := term.ReadPassword(os.Stdin.Fd())
-			fmt.Println()
+			fmt.Fprintln(cmd.OutOrStdout())
 			if err != nil {
 				return err
 			}
-			apiKey = string(b)
+			key = string(b)
+		} else {
+			if _, err := fmt.Fscan(cmd.InOrStdin(), &key); err != nil {
+				return err
+			}
 		}
-		if err := manager.StoreAPIKey(cmd.Context(), auth.CredentialSourceID(args[0]), apiKey); err != nil {
-			return err
-		}
-		fmt.Fprintf(cmd.OutOrStderr(), "Stored API key for %s.\n", args[0])
-		return nil
-	},
+	}
+	if err := manager.StoreAPIKey(cmd.Context(), auth.CredentialSourceID(provider.ID), key); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStderr(), "Stored API key for %s.\n", provider.ID)
+	return nil
 }
 
 func init() {

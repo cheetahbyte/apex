@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cheetahbyte/apex/internal/auth"
 	"github.com/cheetahbyte/apex/internal/config"
 )
 
@@ -13,53 +12,96 @@ func Builtins() map[string]Provider {
 		"ollama": {
 			ID:           "ollama",
 			DisplayName:  "Ollama",
-			Protocol:     ProtocolOpenAICompatible,
-			BaseURL:      "http://localhost:11434/v1",
 			DefaultModel: "gemma4:12b",
-			AuthKind:     auth.AuthKindAPIKey,
-			ToolMode:     config.ToolModeAuto,
+			Client: ClientSpec{
+				Type:    ClientTypeOpenAICompatible,
+				BaseURL: "http://localhost:11434/v1",
+			},
+			Auth: AuthSpec{
+				Type:       AuthTypeAPIKey,
+				DefaultKey: "ollama",
+			},
+			ToolMode: config.ToolModeAuto,
 		},
 		"openrouter": {
 			ID:           "openrouter",
 			DisplayName:  "OpenRouter",
-			Protocol:     ProtocolOpenAICompatible,
-			BaseURL:      "https://openrouter.ai/api/v1",
 			DefaultModel: "anthropic/claude-sonnet-4",
-			AuthKind:     auth.AuthKindAPIKey,
-			ToolMode:     config.ToolModeAuto,
+			Client: ClientSpec{
+				Type:    ClientTypeOpenAICompatible,
+				BaseURL: "https://openrouter.ai/api/v1",
+			},
+			Auth: AuthSpec{
+				Type: AuthTypeAPIKey,
+				Prompts: []PromptSpec{{
+					Name:     "key",
+					Label:    "API Key",
+					Secret:   true,
+					Required: true,
+				}},
+			},
+			ToolMode: config.ToolModeAuto,
 		},
 		"codex": {
 			ID:           "codex",
 			DisplayName:  "Codex",
-			Protocol:     ProtocolOpenAICompatible,
-			BaseURL:      "https://api.openai.com/v1",
+			Aliases:      []string{"openai", "openai-codex", "chatgpt"},
 			DefaultModel: "openai/gpt-5.5-fast",
-			AuthKind:     auth.AuthKindOAuth2,
-			ToolMode:     config.ToolModeAuto,
+			Client: ClientSpec{
+				Type:    ClientTypeOpenAICompatible,
+				BaseURL: "https://api.openai.com/v1",
+			},
+			Auth: AuthSpec{
+				Type: AuthTypeOAuthPKCE,
+				OAuth: &OAuthSpec{
+					Issuer:        "https://auth.openai.com",
+					ClientID:      "app_EMoamEEZ73f0CkXaXp7hrann",
+					Scopes:        []string{"openid", "email", "profile", "offline_access"},
+					RedirectPath:  "/auth/callback",
+					DefaultPort:   1455,
+					AuthEndpoint:  "https://auth.openai.com/oauth/authorize",
+					TokenEndpoint: "https://auth.openai.com/oauth/token",
+				},
+			},
+			ToolMode: config.ToolModeAuto,
 		},
 		"opencode-go": {
 			ID:           "opencode-go",
 			DisplayName:  "opencode-go",
-			Protocol:     ProtocolOpenAICompatible,
-			BaseURL:      "https://api.opencode.ai/v1",
 			DefaultModel: "deepseek-v4-flash",
-			AuthKind:     auth.AuthKindAPIKey,
-			ToolMode:     config.ToolModeAuto,
+			Client: ClientSpec{
+				Type:    ClientTypeOpenAICompatible,
+				BaseURL: "https://api.opencode.ai/v1",
+			},
+			Auth: AuthSpec{
+				Type: AuthTypeAPIKey,
+				Prompts: []PromptSpec{{
+					Name:     "key",
+					Label:    "API Key",
+					Secret:   true,
+					Required: true,
+				}},
+			},
+			ToolMode: config.ToolModeAuto,
 		},
 	}
 }
 
 func Resolve(cfg config.Config) (Provider, error) {
-	providerID := canonicalProviderID(cfg.Provider)
+	providerID := strings.ToLower(strings.TrimSpace(cfg.Provider))
 	if providerID == "" {
 		providerID = "ollama"
 	}
-	provider, ok := Builtins()[providerID]
+	providers := Builtins()
+	if canonicalID, ok := aliasIndex(providers)[providerID]; ok {
+		providerID = canonicalID
+	}
+	provider, ok := providers[providerID]
 	if !ok {
 		return Provider{}, fmt.Errorf("unknown provider %q", cfg.Provider)
 	}
 	if strings.TrimSpace(cfg.BaseURL) != "" {
-		provider.BaseURL = strings.TrimSpace(cfg.BaseURL)
+		provider.Client.BaseURL = strings.TrimSpace(cfg.BaseURL)
 	}
 	if strings.TrimSpace(cfg.Model) != "" {
 		provider.DefaultModel = strings.TrimSpace(cfg.Model)
@@ -70,13 +112,13 @@ func Resolve(cfg config.Config) (Provider, error) {
 	return provider, nil
 }
 
-func canonicalProviderID(id string) string {
-	switch strings.ToLower(strings.TrimSpace(id)) {
-	case "", "ollama":
-		return strings.ToLower(strings.TrimSpace(id))
-	case "openai", "openai-codex", "chatgpt":
-		return "codex"
-	default:
-		return strings.ToLower(strings.TrimSpace(id))
+func aliasIndex(providers map[string]Provider) map[string]string {
+	aliases := map[string]string{}
+	for id, provider := range providers {
+		aliases[strings.ToLower(strings.TrimSpace(id))] = id
+		for _, alias := range provider.Aliases {
+			aliases[strings.ToLower(strings.TrimSpace(alias))] = id
+		}
 	}
+	return aliases
 }

@@ -45,18 +45,19 @@ type Store interface {
 type AuthFile map[CredentialSourceID]SourceAuth
 
 type SourceAuth struct {
-	Type         AuthKind `json:"type"`
-	Key          string   `json:"key,omitempty"`
-	AccessToken  string   `json:"access,omitempty"`
-	RefreshToken string   `json:"refresh,omitempty"`
-	IDToken      string   `json:"id,omitempty"`
-	Expires      int64    `json:"expires,omitempty"`
-	LastRefresh  int64    `json:"lastRefresh,omitempty"`
-	AccountID    string   `json:"accountId,omitempty"`
-	Email        string   `json:"email,omitempty"`
-	PlanType     string   `json:"planType,omitempty"`
-	Issuer       string   `json:"issuer,omitempty"`
-	ClientID     string   `json:"clientId,omitempty"`
+	Type          AuthKind `json:"type"`
+	Key           string   `json:"key,omitempty"`
+	AccessToken   string   `json:"access,omitempty"`
+	RefreshToken  string   `json:"refresh,omitempty"`
+	IDToken       string   `json:"id,omitempty"`
+	Expires       int64    `json:"expires,omitempty"`
+	LastRefresh   int64    `json:"lastRefresh,omitempty"`
+	AccountID     string   `json:"accountId,omitempty"`
+	Email         string   `json:"email,omitempty"`
+	PlanType      string   `json:"planType,omitempty"`
+	Issuer        string   `json:"issuer,omitempty"`
+	ClientID      string   `json:"clientId,omitempty"`
+	TokenEndpoint string   `json:"tokenEndpoint,omitempty"`
 }
 
 type Claims struct {

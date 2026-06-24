@@ -56,17 +56,18 @@ func (m *Manager) StoreLogin(ctx context.Context, source OAuthCredentialSource, 
 		claims, _ = ClaimsFromJWT(tokens.IDToken)
 	}
 	(*file)[source.ID()] = SourceAuth{
-		Type:         AuthKindOAuth2,
-		Issuer:       source.Issuer(),
-		ClientID:     source.ClientID(),
-		AccessToken:  tokens.AccessToken,
-		RefreshToken: tokens.RefreshToken,
-		IDToken:      tokens.IDToken,
-		Expires:      unixTime(expiresAt),
-		LastRefresh:  unixTime(now),
-		AccountID:    claims.AccountID,
-		Email:        claims.Email,
-		PlanType:     claims.PlanType,
+		Type:          AuthKindOAuth2,
+		Issuer:        source.Issuer(),
+		ClientID:      source.ClientID(),
+		AccessToken:   tokens.AccessToken,
+		RefreshToken:  tokens.RefreshToken,
+		IDToken:       tokens.IDToken,
+		Expires:       unixTime(expiresAt),
+		LastRefresh:   unixTime(now),
+		AccountID:     claims.AccountID,
+		Email:         claims.Email,
+		PlanType:      claims.PlanType,
+		TokenEndpoint: source.TokenEndpoint(),
 	}
 	return m.store.Save(ctx, file)
 }
@@ -135,18 +136,18 @@ func (m *Manager) Token(ctx context.Context, sourceID CredentialSourceID) (strin
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	file, auth, source, err := m.loadOAuth(ctx, sourceID)
+	file, auth, err := m.loadOAuth(ctx, sourceID)
 	if err != nil {
 		return "", err
 	}
 	if !needsRefresh(auth, time.Now().UTC()) {
 		return auth.AccessToken, nil
 	}
-	updated, err := m.refreshLocked(ctx, source, auth)
+	updated, err := m.refreshLocked(ctx, auth)
 	if err != nil {
 		return auth.AccessToken, err
 	}
-	(*file)[source.ID()] = updated
+	(*file)[canonicalSourceID(sourceID)] = updated
 	if err := m.store.Save(ctx, file); err != nil {
 		return "", err
 	}
@@ -157,15 +158,15 @@ func (m *Manager) Refresh(ctx context.Context, sourceID CredentialSourceID) (str
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	file, auth, source, err := m.loadOAuth(ctx, sourceID)
+	file, auth, err := m.loadOAuth(ctx, sourceID)
 	if err != nil {
 		return "", err
 	}
-	updated, err := m.refreshLocked(ctx, source, auth)
+	updated, err := m.refreshLocked(ctx, auth)
 	if err != nil {
 		return "", err
 	}
-	(*file)[source.ID()] = updated
+	(*file)[canonicalSourceID(sourceID)] = updated
 	if err := m.store.Save(ctx, file); err != nil {
 		return "", err
 	}
@@ -193,37 +194,44 @@ func (m *Manager) Logout(ctx context.Context, sourceID CredentialSourceID) error
 	return m.store.Delete(ctx, sourceID)
 }
 
-func (m *Manager) loadOAuth(ctx context.Context, sourceID CredentialSourceID) (*AuthFile, SourceAuth, OAuthCredentialSource, error) {
+func (m *Manager) loadOAuth(ctx context.Context, sourceID CredentialSourceID) (*AuthFile, SourceAuth, error) {
 	file, err := m.store.Load(ctx)
 	if err != nil {
-		return nil, SourceAuth{}, nil, err
+		return nil, SourceAuth{}, err
 	}
 	if sourceID == "" {
-		return nil, SourceAuth{}, nil, fmt.Errorf("no provider configured")
+		return nil, SourceAuth{}, fmt.Errorf("no provider configured")
 	}
 	sourceID = canonicalSourceID(sourceID)
-	source, ok := m.sources[sourceID]
-	if !ok {
-		return nil, SourceAuth{}, nil, fmt.Errorf("unknown provider %q", sourceID)
-	}
-	oauthSource, ok := source.(OAuthCredentialSource)
-	if !ok {
-		return nil, SourceAuth{}, nil, fmt.Errorf("provider %q does not support OAuth", sourceID)
-	}
 	auth, ok := (*file)[sourceID]
 	if !ok || auth.AccessToken == "" {
-		return nil, SourceAuth{}, nil, fmt.Errorf("not logged in to %s", sourceID)
+		return nil, SourceAuth{}, fmt.Errorf("not logged in to %s", sourceID)
 	}
-	return file, auth, oauthSource, nil
+	if auth.TokenEndpoint == "" {
+		source, ok := m.sources[sourceID]
+		if !ok {
+			return nil, SourceAuth{}, fmt.Errorf("unknown provider %q", sourceID)
+		}
+		oauthSource, ok := source.(OAuthCredentialSource)
+		if !ok {
+			return nil, SourceAuth{}, fmt.Errorf("provider %q does not support OAuth", sourceID)
+		}
+		auth.ClientID = oauthSource.ClientID()
+		auth.TokenEndpoint = oauthSource.TokenEndpoint()
+	}
+	return file, auth, nil
 }
 
-func (m *Manager) refreshLocked(ctx context.Context, source OAuthCredentialSource, current SourceAuth) (SourceAuth, error) {
+func (m *Manager) refreshLocked(ctx context.Context, current SourceAuth) (SourceAuth, error) {
 	if current.RefreshToken == "" {
-		return SourceAuth{}, fmt.Errorf("refresh token missing for %s", source.ID())
+		return SourceAuth{}, fmt.Errorf("refresh token missing")
 	}
-	resp, err := m.client.Refresh(ctx, source.TokenEndpoint(), oauth.RefreshRequest{
+	if current.TokenEndpoint == "" || current.ClientID == "" {
+		return SourceAuth{}, fmt.Errorf("oauth refresh configuration missing")
+	}
+	resp, err := m.client.Refresh(ctx, current.TokenEndpoint, oauth.RefreshRequest{
 		GrantType:    "refresh_token",
-		ClientID:     source.ClientID(),
+		ClientID:     current.ClientID,
 		RefreshToken: current.RefreshToken,
 	})
 	if err != nil {

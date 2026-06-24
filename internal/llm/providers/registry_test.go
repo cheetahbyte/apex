@@ -3,7 +3,6 @@ package providers
 import (
 	"testing"
 
-	"github.com/cheetahbyte/apex/internal/auth"
 	"github.com/cheetahbyte/apex/internal/config"
 )
 
@@ -12,7 +11,7 @@ func TestResolveDefaultsToOllama(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if provider.ID != "ollama" || provider.BaseURL == "" || provider.DefaultModel == "" {
+	if provider.ID != "ollama" || provider.Client.BaseURL == "" || provider.DefaultModel == "" {
 		t.Fatalf("unexpected default provider %+v", provider)
 	}
 }
@@ -22,7 +21,7 @@ func TestResolveOpenRouter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if provider.ID != "openrouter" || provider.AuthKind != auth.AuthKindAPIKey {
+	if provider.ID != "openrouter" || provider.Auth.Type != AuthTypeAPIKey {
 		t.Fatalf("unexpected openrouter provider %+v", provider)
 	}
 }
@@ -33,7 +32,7 @@ func TestResolveCodexAliases(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if provider.ID != "codex" || provider.AuthKind != auth.AuthKindOAuth2 {
+		if provider.ID != "codex" || provider.Auth.Type != AuthTypeOAuthPKCE {
 			t.Fatalf("alias %q resolved to %+v", id, provider)
 		}
 	}
@@ -48,7 +47,14 @@ func TestResolveOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if provider.DefaultModel != "custom-model" || provider.BaseURL != "http://example.test/v1" {
+	if provider.DefaultModel != "custom-model" || provider.Client.BaseURL != "http://example.test/v1" {
 		t.Fatalf("overrides not applied: %+v", provider)
+	}
+}
+
+func TestBuiltinsDefineAliasesInProviderTable(t *testing.T) {
+	provider := Builtins()["codex"]
+	if len(provider.Aliases) == 0 {
+		t.Fatal("expected codex aliases in provider definition")
 	}
 }
