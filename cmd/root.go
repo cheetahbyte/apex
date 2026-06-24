@@ -4,6 +4,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/cheetahbyte/apex/internal/agent"
 	"github.com/cheetahbyte/apex/internal/config"
+	llmproviders "github.com/cheetahbyte/apex/internal/llm/providers"
 	"github.com/cheetahbyte/apex/internal/llm/toolclient"
 	"github.com/cheetahbyte/apex/internal/tools/builtin"
 	"github.com/cheetahbyte/apex/internal/tui"
@@ -21,7 +22,7 @@ var rootCmd = &cobra.Command{
 		}
 		client := toolclient.New(base, toolclient.ModeFromString(string(cfg.ToolMode)))
 		registry := builtin.NewRegistry()
-		apexAgent := agent.New(client, registry)
+		apexAgent := agent.NewWithContextWindow(client, registry, llmproviders.ContextWindowForModel(cfg.Model))
 		_, err = tea.NewProgram(tui.New(apexAgent, tui.RuntimeInfo{Provider: provider.ID, Model: cfg.Model})).Run()
 		return err
 	},

@@ -1,12 +1,14 @@
 package sidebar
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/list"
+	"github.com/cheetahbyte/apex/internal/llm"
 )
 
 var (
@@ -25,6 +27,7 @@ type Model struct {
 	height int // OUTER box height
 	mcps   []string
 	cwd    string
+	usage  llm.ContextUsage
 }
 
 func New() Model {
@@ -46,6 +49,11 @@ func (m Model) SetSize(width, height int) Model {
 
 func (m Model) SetCWD(cwd string) Model {
 	m.cwd = cwd
+	return m
+}
+
+func (m Model) SetContext(usage llm.ContextUsage) Model {
+	m.usage = usage
 	return m
 }
 
@@ -80,7 +88,7 @@ func (m Model) View() string {
 }
 
 func (m Model) body(innerW, innerH int) string {
-	top := m.mcpList()
+	top := lipgloss.JoinVertical(lipgloss.Left, m.contextView(), "", m.mcpList())
 	bottom := cwdStyle.Render(shortenPath(m.cwd, innerW))
 	fill := safeSub(innerH, lipgloss.Height(top)+lipgloss.Height(bottom))
 	parts := []string{top}
@@ -89,6 +97,29 @@ func (m Model) body(innerW, innerH int) string {
 	}
 	parts = append(parts, bottom)
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+func (m Model) contextView() string {
+	if m.usage.Tokens == 0 {
+		return itemStyle.Render("Context\n—")
+	}
+	used := formatTokens(m.usage.Tokens)
+	if m.usage.ContextWindow <= 0 {
+		return itemStyle.Render(fmt.Sprintf("Context\n%s / ?", used))
+	}
+	total := formatTokens(m.usage.ContextWindow)
+	return itemStyle.Render(fmt.Sprintf("Context\n%s / %s\n%.1f%%", used, total, m.usage.Percent))
+}
+
+func formatTokens(n int) string {
+	switch {
+	case n >= 1000000:
+		return fmt.Sprintf("%.1fM", float64(n)/1000000)
+	case n >= 1000:
+		return fmt.Sprintf("%.1fk", float64(n)/1000)
+	default:
+		return fmt.Sprintf("%d", n)
+	}
 }
 
 func (m Model) mcpList() string {

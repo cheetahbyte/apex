@@ -56,6 +56,33 @@ func TestAgent_normalTextResponse(t *testing.T) {
 	}
 }
 
+func TestAgentEmitsContextUsage(t *testing.T) {
+	client := &mockClient{
+		caps:  llm.Capabilities{NativeTools: true},
+		turns: []llm.Turn{{Content: "ok"}},
+	}
+	session := conversation.NewSession()
+	session.AppendUser("hi")
+	agent := NewWithContextWindow(client, newTestRegistry(mockTool{name: "noop", result: ""}), 400000)
+
+	var usage *llm.ContextUsage
+	for ev := range agent.Run(context.Background(), session) {
+		if ev.Context != nil {
+			usage = ev.Context
+		}
+	}
+
+	if usage == nil {
+		t.Fatal("expected context usage event")
+	}
+	if usage.Tokens <= 0 {
+		t.Fatalf("expected positive token estimate, got %d", usage.Tokens)
+	}
+	if usage.ContextWindow != 400000 {
+		t.Fatalf("expected context window 400000, got %d", usage.ContextWindow)
+	}
+}
+
 func TestAgent_emptyResponseReturnsError(t *testing.T) {
 	client := &mockClient{
 		caps:  llm.Capabilities{NativeTools: true},

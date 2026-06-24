@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/cheetahbyte/apex/internal/auth"
@@ -15,6 +17,26 @@ import (
 
 type ModelLister interface {
 	ListModels(ctx context.Context, provider Provider, credential Credential) ([]ModelSpec, error)
+}
+
+func ContextWindowForModel(model string) int {
+	if override := strings.TrimSpace(os.Getenv("APEX_CONTEXT_WINDOW")); override != "" {
+		if n, err := strconv.Atoi(override); err == nil && n > 0 {
+			return n
+		}
+	}
+
+	model = strings.ToLower(strings.TrimSpace(model))
+	switch {
+	case strings.HasPrefix(model, "gpt-5.5"):
+		return 400000
+	case strings.HasPrefix(model, "gpt-5.4"):
+		return 400000
+	case strings.HasPrefix(model, "gpt-4.1"), strings.HasPrefix(model, "gpt-4o"):
+		return 128000
+	default:
+		return 0
+	}
 }
 
 type OpenAICompatibleLister struct {

@@ -44,6 +44,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.AppendStatus(string(msg))
 		return m, waitForChunk(m.chunks)
 
+	case contextMsg:
+		m.sidebar = m.sidebar.SetContext(msg.usage)
+		return m, waitForChunk(m.chunks)
+
 	case streamDoneMsg:
 		m.streaming = false
 		m.chat.CommitAssistant()

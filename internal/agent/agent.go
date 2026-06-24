@@ -29,21 +29,27 @@ If a tool call fails, report the exact failure text and what to try next.`
 // Event is a single event from the agent loop. The TUI consumes these
 // to update the chat view.
 type Event struct {
-	Delta  string // text chunk from the model
-	Status string // tool status line, e.g. "[tool] web_fetch https://..."
-	Err    error
-	Done   bool
+	Delta   string // text chunk from the model
+	Status  string // tool status line, e.g. "[tool] web_fetch https://..."
+	Context *llm.ContextUsage
+	Err     error
+	Done    bool
 }
 
 // Agent orchestrates the model ↔ tool loop. It is provider-agnostic:
 // all provider-specific translation happens inside llm.Client.
 type Agent struct {
-	client   llm.Client
-	registry *tools.Registry
+	client        llm.Client
+	registry      *tools.Registry
+	contextWindow int
 }
 
 func New(client llm.Client, registry *tools.Registry) *Agent {
 	return &Agent{client: client, registry: registry}
+}
+
+func NewWithContextWindow(client llm.Client, registry *tools.Registry, contextWindow int) *Agent {
+	return &Agent{client: client, registry: registry, contextWindow: contextWindow}
 }
 
 // Run starts the agent loop for the current session and returns a
@@ -55,10 +61,9 @@ func (a *Agent) Run(ctx context.Context, session *conversation.Session) <-chan E
 		defer close(ch)
 
 		for i := 0; i < maxToolIterations; i++ {
-			req := llm.Request{
-				Messages: withAgentSystemPrompt(session.Messages()),
-				Tools:    a.registry.Specs(),
-			}
+			req := a.requestForSession(session)
+			usage := a.contextUsage(req)
+			ch <- Event{Context: &usage}
 
 			turn, err := a.streamTurn(ctx, ch, req)
 			if err != nil {
@@ -80,6 +85,8 @@ func (a *Agent) Run(ctx context.Context, session *conversation.Session) <-chan E
 			})
 
 			if len(turn.ToolCalls) == 0 {
+				usage := a.contextUsage(a.requestForSession(session))
+				ch <- Event{Context: &usage}
 				ch <- Event{Done: true}
 				return
 			}
@@ -99,6 +106,17 @@ func (a *Agent) Run(ctx context.Context, session *conversation.Session) <-chan E
 	}()
 
 	return ch
+}
+
+func (a *Agent) requestForSession(session *conversation.Session) llm.Request {
+	return llm.Request{
+		Messages: withAgentSystemPrompt(session.Messages()),
+		Tools:    a.registry.Specs(),
+	}
+}
+
+func (a *Agent) contextUsage(req llm.Request) llm.ContextUsage {
+	return llm.EstimateContextUsage(req, a.contextWindow)
 }
 
 func withAgentSystemPrompt(messages []conversation.Message) []conversation.Message {

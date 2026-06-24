@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/cheetahbyte/apex/internal/agent"
 	"github.com/cheetahbyte/apex/internal/conversation"
+	"github.com/cheetahbyte/apex/internal/llm"
 	"github.com/cheetahbyte/apex/internal/tui/components/chat"
 	"github.com/cheetahbyte/apex/internal/tui/components/prompt"
 	"github.com/cheetahbyte/apex/internal/tui/components/sidebar"
@@ -16,6 +17,7 @@ type (
 	streamChunkMsg string
 	streamDoneMsg  struct{}
 	statusMsg      string
+	contextMsg     struct{ usage llm.ContextUsage }
 	errMsg         struct{ err error }
 )
 
@@ -73,6 +75,8 @@ func (m Model) spawnStream() tea.Cmd {
 					return
 				case ev.Status != "":
 					m.chunks <- statusMsg(ev.Status)
+				case ev.Context != nil:
+					m.chunks <- contextMsg{usage: *ev.Context}
 				default:
 					if ev.Delta != "" {
 						m.chunks <- streamChunkMsg(ev.Delta)
