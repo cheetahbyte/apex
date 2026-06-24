@@ -1,6 +1,9 @@
 package chat
 
 import (
+	"os"
+	"strings"
+
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
@@ -65,7 +68,7 @@ func (m *Model) SetSize(width, height int) {
 
 // AppendUser appends user input to the raw output and rerenders markdown.
 func (m *Model) AppendUser(text string) {
-	m.output += "\n\n> " + text + "\n"
+	m.output += "\n\n**You:** " + text + "\n\n"
 	m.refreshOutput()
 	m.viewport.GotoBottom()
 }
@@ -73,6 +76,12 @@ func (m *Model) AppendUser(text string) {
 // AppendAssistantChunk appends a streaming text chunk to the output and
 // assistant buffer, then rerenders markdown.
 func (m *Model) AppendAssistantChunk(chunk string) {
+	if m.assistantBuf == "" {
+		if !strings.HasSuffix(m.output, "\n\n") {
+			m.output += "\n\n"
+		}
+		m.output += "**Apex:** "
+	}
 	m.output += chunk
 	m.assistantBuf += chunk
 	m.refreshOutput()
@@ -83,6 +92,11 @@ func (m *Model) AppendAssistantChunk(chunk string) {
 // the buffer. Call this when the stream completes successfully.
 func (m *Model) CommitAssistant() string {
 	buf := m.assistantBuf
+	if buf != "" && !strings.HasSuffix(m.output, "\n\n") {
+		m.output += "\n\n"
+		m.refreshOutput()
+		m.viewport.GotoBottom()
+	}
 	m.assistantBuf = ""
 	return buf
 }
@@ -102,7 +116,7 @@ func (m *Model) AppendError(text string) {
 
 // AppendStatus adds a status line (e.g. tool execution) and rerenders markdown.
 func (m *Model) AppendStatus(text string) {
-	m.output += "\n" + text + "\n"
+	m.output += "\n" + text + "\n\n"
 	m.refreshOutput()
 	m.viewport.GotoBottom()
 }
@@ -116,7 +130,7 @@ func (m *Model) refreshOutput() {
 	rendered := m.output
 
 	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStylePath(markdownStyle()),
 		glamour.WithWordWrap(width),
 	)
 	if err == nil {
@@ -127,6 +141,16 @@ func (m *Model) refreshOutput() {
 	}
 
 	m.viewport.SetContent(rendered)
+}
+
+func markdownStyle() string {
+	if style := strings.TrimSpace(os.Getenv("APEX_MARKDOWN_STYLE")); style != "" {
+		return style
+	}
+	if style := strings.TrimSpace(os.Getenv("GLAMOUR_STYLE")); style != "" {
+		return style
+	}
+	return "light"
 }
 
 // Style returns the chat box style. Border is added outside Width/Height,
