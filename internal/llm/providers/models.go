@@ -95,11 +95,8 @@ type StaticLister struct{}
 func (l StaticLister) ListModels(ctx context.Context, provider Provider, credential Credential) ([]ModelSpec, error) {
 	return []ModelSpec{
 		{ID: "gpt-5.5", DisplayName: "gpt-5.5", Context: 400000},
-		{ID: "gpt-5.5-fast", DisplayName: "gpt-5.5-fast"},
 		{ID: "gpt-5.4", DisplayName: "gpt-5.4"},
-		{ID: "gpt-5.4-fast", DisplayName: "gpt-5.4-fast"},
 		{ID: "gpt-5.4-mini", DisplayName: "gpt-5.4-mini"},
-		{ID: "gpt-5.4-mini-fast", DisplayName: "gpt-5.4-mini-fast"},
 		{ID: "gpt-5.3-codex-spark", DisplayName: "gpt-5.3-codex-spark"},
 	}, nil
 }
