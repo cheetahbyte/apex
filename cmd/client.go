@@ -11,16 +11,20 @@ import (
 	llmproviders "github.com/cheetahbyte/apex/internal/llm/providers"
 )
 
-func newLLMClient(ctx context.Context, cfg config.Config) (llm.Client, error) {
+func newLLMClient(ctx context.Context, cfg config.Config) (llm.Client, llmproviders.Provider, error) {
 	manager, err := newAuthManager()
 	if err != nil {
-		return nil, err
+		return nil, llmproviders.Provider{}, err
 	}
 	provider, err := llmproviders.Resolve(cfg)
 	if err != nil {
-		return nil, err
+		return nil, llmproviders.Provider{}, err
 	}
-	return llmproviders.Build(ctx, provider, cfg, manager)
+	client, err := llmproviders.Build(ctx, provider, cfg, manager)
+	if err != nil {
+		return nil, llmproviders.Provider{}, err
+	}
+	return client, provider, nil
 }
 
 func newAuthManager() (*auth.Manager, error) {

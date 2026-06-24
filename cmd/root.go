@@ -15,14 +15,14 @@ var rootCmd = &cobra.Command{
 	Short: "Apex is a terminal coding agent",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := config.Default()
-		base, err := newLLMClient(cmd.Context(), cfg)
+		base, provider, err := newLLMClient(cmd.Context(), cfg)
 		if err != nil {
 			return err
 		}
 		client := toolclient.New(base, toolclient.ModeFromString(string(cfg.ToolMode)))
 		registry := builtin.NewRegistry()
 		apexAgent := agent.New(client, registry)
-		_, err = tea.NewProgram(tui.New(apexAgent)).Run()
+		_, err = tea.NewProgram(tui.New(apexAgent, tui.RuntimeInfo{Provider: provider.ID, Model: cfg.Model})).Run()
 		return err
 	},
 }

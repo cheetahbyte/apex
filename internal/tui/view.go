@@ -16,6 +16,8 @@ func (m Model) View() tea.View {
 		m.chat.View(),
 		m.prompt.View(),
 		m.status.View(
+			m.runtime.Provider,
+			m.runtime.Model,
 			m.session.Len(),
 			len(m.prompt.Value()),
 			m.prompt.CharLimit(),

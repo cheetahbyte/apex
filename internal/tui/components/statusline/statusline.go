@@ -30,8 +30,8 @@ func (m Model) SetSize(width int) Model {
 // View renders the status line. The caller provides the runtime stats
 // (message count, input length, terminal size) since they live on the
 // root model and the session.
-func (m Model) View(msgCount, inputLen, inputLimit, termW, termH int) string {
-	left := " Apex "
+func (m Model) View(provider, model string, msgCount, inputLen, inputLimit, termW, termH int) string {
+	left := fmt.Sprintf(" Apex  %s/%s ", provider, model)
 	right := fmt.Sprintf(
 		" msgs:%d  input:%d/%d  size:%dx%d ",
 		msgCount, inputLen, inputLimit, termW, termH,

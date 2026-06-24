@@ -27,11 +27,11 @@ type Model struct {
 	width  int
 	height int
 
-	chat    chat.Model
-	prompt  prompt.Model
-	sidebar sidebar.Model
-	status  statusline.Model
-
+	chat      chat.Model
+	prompt    prompt.Model
+	sidebar   sidebar.Model
+	status    statusline.Model
+	runtime   RuntimeInfo
 	session   *conversation.Session
 	streaming bool
 	chunks    chan tea.Msg
@@ -40,7 +40,7 @@ type Model struct {
 
 // New creates the root TUI model. The LLM client is injected so the TUI
 // stays decoupled from any specific provider.
-func New(agent *agent.Agent) Model {
+func New(agent *agent.Agent, runtime RuntimeInfo) Model {
 	return Model{
 		chat:    chat.New(),
 		prompt:  prompt.New(),
@@ -48,6 +48,7 @@ func New(agent *agent.Agent) Model {
 		status:  statusline.New(),
 		session: conversation.NewSession(),
 		agent:   agent,
+		runtime: runtime,
 		chunks:  make(chan tea.Msg),
 	}
 }
@@ -87,4 +88,9 @@ func waitForChunk(ch chan tea.Msg) tea.Cmd {
 	return func() tea.Msg {
 		return <-ch
 	}
+}
+
+type RuntimeInfo struct {
+	Provider string
+	Model    string
 }
