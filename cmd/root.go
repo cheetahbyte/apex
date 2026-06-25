@@ -6,6 +6,7 @@ import (
 	"github.com/cheetahbyte/apex/internal/config"
 	llmproviders "github.com/cheetahbyte/apex/internal/llm/providers"
 	"github.com/cheetahbyte/apex/internal/llm/toolclient"
+	"github.com/cheetahbyte/apex/internal/skills"
 	"github.com/cheetahbyte/apex/internal/tools/builtin"
 	"github.com/cheetahbyte/apex/internal/tui"
 	"github.com/spf13/cobra"
@@ -21,8 +22,13 @@ var rootCmd = &cobra.Command{
 			return err
 		}
 		client := toolclient.New(base, toolclient.ModeFromString(string(cfg.ToolMode)))
-		registry := builtin.NewRegistry()
-		apexAgent := agent.NewWithContextWindow(client, registry, llmproviders.ContextWindowForModel(cfg.Model))
+		skillStore, err := skills.LoadDefault()
+		if err != nil {
+			skillStore = skills.NewStore()
+		}
+		registry := builtin.NewRegistryWithSkills(skillStore)
+		systemPrompt := agent.BuildSystemPrompt(skillStore.IndexPrompt())
+		apexAgent := agent.NewWithContextWindowAndSystemPrompt(client, registry, llmproviders.ContextWindowForModel(cfg.Model), systemPrompt)
 		_, err = tea.NewProgram(tui.New(apexAgent, tui.RuntimeInfo{Provider: provider.ID, Model: cfg.Model})).Run()
 		return err
 	},

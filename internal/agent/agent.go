@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -42,14 +43,22 @@ type Agent struct {
 	client        llm.Client
 	registry      *tools.Registry
 	contextWindow int
+	systemPrompt  string
 }
 
 func New(client llm.Client, registry *tools.Registry) *Agent {
-	return &Agent{client: client, registry: registry}
+	return NewWithContextWindowAndSystemPrompt(client, registry, 0, agentSystemPrompt)
 }
 
 func NewWithContextWindow(client llm.Client, registry *tools.Registry, contextWindow int) *Agent {
-	return &Agent{client: client, registry: registry, contextWindow: contextWindow}
+	return NewWithContextWindowAndSystemPrompt(client, registry, contextWindow, agentSystemPrompt)
+}
+
+func NewWithContextWindowAndSystemPrompt(client llm.Client, registry *tools.Registry, contextWindow int, systemPrompt string) *Agent {
+	if strings.TrimSpace(systemPrompt) == "" {
+		systemPrompt = agentSystemPrompt
+	}
+	return &Agent{client: client, registry: registry, contextWindow: contextWindow, systemPrompt: systemPrompt}
 }
 
 // Run starts the agent loop for the current session and returns a
@@ -110,7 +119,7 @@ func (a *Agent) Run(ctx context.Context, session *conversation.Session) <-chan E
 
 func (a *Agent) requestForSession(session *conversation.Session) llm.Request {
 	return llm.Request{
-		Messages: withAgentSystemPrompt(session.Messages()),
+		Messages: withSystemPrompt(session.Messages(), a.systemPrompt),
 		Tools:    a.registry.Specs(),
 	}
 }
@@ -120,20 +129,37 @@ func (a *Agent) contextUsage(req llm.Request) llm.ContextUsage {
 }
 
 func withAgentSystemPrompt(messages []conversation.Message) []conversation.Message {
+	return withSystemPrompt(messages, agentSystemPrompt)
+}
+
+func BuildSystemPrompt(skillIndex string) string {
+	if strings.TrimSpace(skillIndex) == "" {
+		return agentSystemPrompt
+	}
+	return agentSystemPrompt + "\n\n" + strings.TrimSpace(skillIndex)
+}
+
+func withSystemPrompt(messages []conversation.Message, systemPrompt string) []conversation.Message {
+	if strings.TrimSpace(systemPrompt) == "" {
+		systemPrompt = agentSystemPrompt
+	}
 	for i := range messages {
 		if messages[i].Role == conversation.RoleSystem {
-			if strings.Contains(messages[i].Content, "You are Apex, a terminal coding agent") {
+			if strings.Contains(messages[i].Content, systemPrompt) {
+				return messages
+			}
+			if systemPrompt == agentSystemPrompt && strings.Contains(messages[i].Content, "You are Apex, a terminal coding agent") {
 				return messages
 			}
 			out := make([]conversation.Message, len(messages))
 			copy(out, messages)
-			out[i].Content = out[i].Content + "\n\n" + agentSystemPrompt
+			out[i].Content = out[i].Content + "\n\n" + systemPrompt
 			return out
 		}
 	}
 
 	out := make([]conversation.Message, 0, len(messages)+1)
-	out = append(out, conversation.Message{Role: conversation.RoleSystem, Content: agentSystemPrompt})
+	out = append(out, conversation.Message{Role: conversation.RoleSystem, Content: systemPrompt})
 	out = append(out, messages...)
 	return out
 }
@@ -165,13 +191,45 @@ func formatToolStatus(call conversation.ToolCall) string {
 				argsSummary = url
 			} else if path, ok := parsed["path"].(string); ok {
 				argsSummary = path
+			} else {
+				argsSummary = formatToolArgs(parsed)
 			}
+		} else {
+			argsSummary = strings.TrimSpace(call.Arguments)
 		}
 	}
 	if argsSummary == "" {
 		return fmt.Sprintf("[tool] %s", call.Name)
 	}
 	return fmt.Sprintf("[tool] %s %s", call.Name, argsSummary)
+}
+
+func formatToolArgs(args map[string]any) string {
+	if len(args) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(args))
+	for key := range args {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	ordered := make(map[string]any, len(args))
+	for _, key := range keys {
+		ordered[key] = args[key]
+	}
+	data, err := json.Marshal(ordered)
+	if err != nil {
+		return ""
+	}
+	return truncateStatusArg(string(data))
+}
+
+func truncateStatusArg(s string) string {
+	const max = 160
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
 }
 
 // executeTool runs a single tool call and returns the result string.

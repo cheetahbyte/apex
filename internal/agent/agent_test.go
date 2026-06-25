@@ -298,3 +298,50 @@ func TestWithAgentSystemPromptAppendsWhenSystemExists(t *testing.T) {
 		t.Fatalf("expected default system instructions appended, got %q", withPrompt[0].Content)
 	}
 }
+
+func TestAgentUsesCustomSystemPrompt(t *testing.T) {
+	client := &mockClient{
+		caps:  llm.Capabilities{NativeTools: true},
+		turns: []llm.Turn{{Content: "ok"}},
+	}
+	session := conversation.NewSession()
+	session.AppendUser("hi")
+	registry := newTestRegistry(mockTool{name: "noop", result: ""})
+	agent := NewWithContextWindowAndSystemPrompt(client, registry, 0, BuildSystemPrompt("Available skills:\n- graphify: Builds graphs."))
+
+	for range agent.Run(context.Background(), session) {
+	}
+
+	if len(client.requests) == 0 {
+		t.Fatal("expected request")
+	}
+	msg := client.requests[0].Messages[0]
+	if msg.Role != conversation.RoleSystem {
+		t.Fatalf("expected first message system, got %s", msg.Role)
+	}
+	if !strings.Contains(msg.Content, "Available skills") || !strings.Contains(msg.Content, "graphify") {
+		t.Fatalf("expected skill index in system prompt, got %q", msg.Content)
+	}
+}
+
+func TestFormatToolStatusIncludesGenericArguments(t *testing.T) {
+	status := formatToolStatus(conversation.ToolCall{
+		Name:      "load_skill",
+		Arguments: `{"name":"graphify"}`,
+	})
+
+	if status != `[tool] load_skill {"name":"graphify"}` {
+		t.Fatalf("unexpected status: %q", status)
+	}
+}
+
+func TestFormatToolStatusKeepsPathShortcut(t *testing.T) {
+	status := formatToolStatus(conversation.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"README.md"}`,
+	})
+
+	if status != `[tool] read_file README.md` {
+		t.Fatalf("unexpected status: %q", status)
+	}
+}
