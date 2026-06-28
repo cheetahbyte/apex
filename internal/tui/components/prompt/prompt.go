@@ -4,23 +4,25 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/cheetahbyte/apex/internal/tui/theme"
 )
 
-// Model is the text input prompt component. It wraps a textinput widget
-// and renders it inside a bordered box.
+// Model is the text input prompt component: a single clean line with an
+// accent prompt glyph.
 type Model struct {
 	width  int
 	height int
 	input  textinput.Model
 }
 
-// New creates a focused prompt with a placeholder and character limit.
+// New creates a focused prompt with a character limit.
 func New() Model {
 	input := textinput.New()
-	input.Placeholder = "Lets work!"
+	input.Placeholder = ""
 	input.Focus()
 	input.CharLimit = 4000
-	input.Prompt = "> "
+	input.Prompt = ""
+	input.SetStyles(inputStyles())
 	return Model{input: input}
 }
 
@@ -31,28 +33,25 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	return m, cmd
 }
 
-// View renders the prompt box with its border and padding.
+// View renders the prompt line: accent glyph + input.
 func (m Model) View() string {
-	if m.width == 0 || m.height == 0 {
+	if m.width == 0 {
 		return ""
 	}
-	style := Style()
-	bw, bh := borderSize(style)
-	return style.
-		Width(safeSub(m.width, bw)).
-		Height(safeSub(m.height, bh)).
-		Render(m.input.View())
+	glyph := lipgloss.NewStyle().
+		Foreground(theme.Primary).
+		Bold(true).
+		Render("❯ ")
+	line := glyph + m.input.View()
+	return theme.Base().Width(m.width).Render(" " + line)
 }
 
-// SetSize sets the outer box dimensions. The text input width is
-// computed by subtracting the frame and the prompt string width.
+// SetSize sets the available width. The text input width is the remaining
+// space after the leading padding and prompt glyph.
 func (m *Model) SetSize(width, height int) {
 	m.width = width
 	m.height = height
-	style := Style()
-	fw, _ := style.GetFrameSize()
-	promptWidth := lipgloss.Width(m.input.Prompt)
-	m.input.SetWidth(safeSub(safeSub(width, fw), promptWidth+1))
+	m.input.SetWidth(safeSub(width, 4)) // " " + "❯ " + a little slack
 }
 
 // Value returns the current input text.
@@ -70,22 +69,31 @@ func (m *Model) Reset() {
 	m.input.Reset()
 }
 
-// Blink returns the cursor blink command. The root model should include
-// this in its Init so the prompt cursor blinks on startup.
+// Blink returns the cursor blink command.
 func Blink() tea.Cmd {
 	return textinput.Blink
 }
 
-// Style returns the prompt box style.
-func Style() lipgloss.Style {
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		Padding(0, 1)
-}
-
-func borderSize(s lipgloss.Style) (w, h int) {
-	return s.GetBorderLeftSize() + s.GetBorderRightSize(),
-		s.GetBorderTopSize() + s.GetBorderBottomSize()
+func inputStyles() textinput.Styles {
+	return textinput.Styles{
+		Focused: textinput.StyleState{
+			Text:        lipgloss.NewStyle().Foreground(theme.ForegroundEmphasis),
+			Placeholder: lipgloss.NewStyle().Foreground(theme.ForegroundMuted).Faint(true),
+			Suggestion:  lipgloss.NewStyle().Foreground(theme.ForegroundMuted),
+			Prompt:      lipgloss.NewStyle().Foreground(theme.Primary).Bold(true),
+		},
+		Blurred: textinput.StyleState{
+			Text:        lipgloss.NewStyle().Foreground(theme.Foreground),
+			Placeholder: lipgloss.NewStyle().Foreground(theme.ForegroundMuted).Faint(true),
+			Suggestion:  lipgloss.NewStyle().Foreground(theme.ForegroundMuted),
+			Prompt:      lipgloss.NewStyle().Foreground(theme.ForegroundMuted),
+		},
+		Cursor: textinput.CursorStyle{
+			Color: theme.Primary,
+			Shape: tea.CursorBar,
+			Blink: true,
+		},
+	}
 }
 
 func safeSub(a, b int) int {

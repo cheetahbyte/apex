@@ -13,7 +13,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.sidebar = m.sidebar.SetSize(sidebarOuterWidth, msg.Height)
 		m.resize()
 
 	case tea.KeyPressMsg:
@@ -45,7 +44,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitForChunk(m.chunks)
 
 	case contextMsg:
-		m.sidebar = m.sidebar.SetContext(msg.usage)
+		m.usage = msg.usage
 		return m, waitForChunk(m.chunks)
 
 	case streamDoneMsg:
@@ -66,9 +65,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, cmd)
 
 	m.prompt, cmd = m.prompt.Update(msg)
-	cmds = append(cmds, cmd)
-
-	m.sidebar, cmd = m.sidebar.Update(msg)
 	cmds = append(cmds, cmd)
 
 	return m, tea.Batch(cmds...)

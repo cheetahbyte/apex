@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"os"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/cheetahbyte/apex/internal/agent"
@@ -9,7 +10,6 @@ import (
 	"github.com/cheetahbyte/apex/internal/llm"
 	"github.com/cheetahbyte/apex/internal/tui/components/chat"
 	"github.com/cheetahbyte/apex/internal/tui/components/prompt"
-	"github.com/cheetahbyte/apex/internal/tui/components/sidebar"
 	"github.com/cheetahbyte/apex/internal/tui/components/statusline"
 )
 
@@ -31,28 +31,35 @@ type Model struct {
 
 	chat      chat.Model
 	prompt    prompt.Model
-	sidebar   sidebar.Model
 	status    statusline.Model
 	runtime   RuntimeInfo
 	session   *conversation.Session
 	streaming bool
 	chunks    chan tea.Msg
 	agent     *agent.Agent
+	usage     llm.ContextUsage
+	cwd       string
 }
 
 // New creates the root TUI model. The LLM client is injected so the TUI
 // stays decoupled from any specific provider.
 func New(agent *agent.Agent, runtime RuntimeInfo) Model {
-	return Model{
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "?"
+	}
+	m := Model{
 		chat:    chat.New(),
 		prompt:  prompt.New(),
-		sidebar: sidebar.New(),
 		status:  statusline.New(),
 		session: conversation.NewSession(),
 		agent:   agent,
 		runtime: runtime,
 		chunks:  make(chan tea.Msg),
+		cwd:     cwd,
 	}
+	m.chat.SetModel(runtime.Model)
+	return m
 }
 
 func (m Model) Init() tea.Cmd {
